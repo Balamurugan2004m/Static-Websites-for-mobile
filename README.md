@@ -1,6 +1,6 @@
 # My Web Projects
 
-Welcome to my collection of web development projects!
+Welcome to my collection of web development projects
 
 ---
 
