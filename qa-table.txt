@@ -1,0 +1,501 @@
+
+import React, { useState, useMemo, useCallback } from "react";
+import { Box, useTheme } from "@mui/material";
+import { useNavigate } from "react-router";
+import { useDispatch, useSelector } from "react-redux";
+import QATable from "../../qa-workqueue/qa-table";
+import QAManagerTable from "../../qa-workqueue/qa-manager-table";
+import ReusableDrawer from "../../../ui/reusable-drawer";
+import CommonToast from "../../../ui/common-toast";
+import {
+    DrawerSelectField,
+    DrawerMultilineField,
+} from "../../../ui/drawer-form-fields";
+import {
+    QA_SELECTED_ROWS,
+    QA_REWORK_ROWS,
+    QA_PROVIDER_RESUBMISSION_ROWS,
+    QA_FCR_REWORK_ROWS,
+    QA_HOLD_ROWS,
+    QA_MANAGER_ROWS,
+} from "../../qa-workqueue/qa-mock-data";
+import type { QaRow, QueueKey } from "../../qa-workqueue/qa-types";
+import { encodeId } from "../../../utils/base64url";
+import {
+    addTab as addTabAction,
+    updateTab,
+    setActiveTab as setActiveTabAction,
+    selectOpenTabs,
+} from "../../../store/slice/tabs-slice";
+import {
+    resolveQaDbqFromExamination,
+    buildQaReviewSearch,
+} from "../../case-search/qa/qa-review-utils";
+import { setActiveSectionForCase } from "../../../store/slice/case-data-control-slice";
+import { searchCasesByVetFedId } from "../../../services/case-search";
+
+export interface QaWidgetTableProps {
+    selectedQueue: string;
+    onOpenCase?: (caseId: string) => void;
+}
+
+export const mapQaStatToQueueKey = (stat: {
+    id?: string;
+    label?: string;
+    key?: string;
+}): string | null => {
+    const key = (stat.key || stat.id || "").toLowerCase();
+    const label = (stat.label || "").toLowerCase();
+
+    if (
+        key === "pending-provider-completion" ||
+        key === "pendingprovidercompletion" ||
+        label.includes("provider completion")
+    ) {
+        return "pending-provider-completion";
+    }
+    if (
+        key === "initial-review" ||
+        key === "initialreview" ||
+        label.includes("initial review")
+    ) {
+        return "initial-review";
+    }
+    if (
+        key === "pending-provider-correction" ||
+        key === "pendingprovidercorrection" ||
+        label.includes("provider correction")
+    ) {
+        return "pending-provider-correction";
+    }
+    if (
+        key === "provider-resubmission" ||
+        key === "providerresubmission" ||
+        label.includes("provider resubmission")
+    ) {
+        return "provider-resubmission";
+    }
+    if (
+        key === "fcr-rework" ||
+        key === "fcr-for-rework" ||
+        key === "fcrrework" ||
+        label.includes("fcr") ||
+        label.includes("fcr for rework")
+    ) {
+        return "fcr-rework";
+    }
+    if (
+        key === "qa-hold" ||
+        key === "qa-for-hold" ||
+        key === "qahold" ||
+        label.includes("qa for hold") ||
+        label.includes("hold")
+    ) {
+        return "qa-hold";
+    }
+    if (
+        key === "pending-qa-manager-review" ||
+        key === "pendingqamanagerreview" ||
+        label.includes("qa manager")
+    ) {
+        return "pending-qa-manager-review";
+    }
+    return null;
+};
+
+const QA_QUEUE_TITLES: Record<QueueKey, string> = {
+    "pending-provider-completion": "Pending Provider Completion",
+    "initial-review": "Initial Review",
+    "pending-provider-correction": "Pending Provider Correction",
+    "provider-resubmission": "Provider Resubmission",
+    "fcr-rework": "FCR for Rework",
+    "qa-hold": "QA for Hold",
+    "pending-qa-manager-review": "Pending QA Manager Review",
+};
+
+const QA_MANAGER_REVIEWER_OPTIONS = [
+    "Brian Kelly",
+    "Admin Admin",
+    "John QA",
+] as const;
+
+const resolveQaQueueKey = (selectedQueue: string): QueueKey => {
+    if (selectedQueue === "initial-review") return "initial-review";
+    if (selectedQueue === "pending-provider-correction")
+        return "pending-provider-correction";
+    if (selectedQueue === "provider-resubmission")
+        return "provider-resubmission";
+    if (
+        selectedQueue === "fcr-rework" ||
+        selectedQueue === "fcr-for-rework"
+    )
+        return "fcr-rework";
+    if (selectedQueue === "qa-hold" || selectedQueue === "qa-for-hold")
+        return "qa-hold";
+    if (selectedQueue === "pending-qa-manager-review")
+        return "pending-qa-manager-review";
+    return "pending-provider-completion";
+};
+
+const QaWidgetTable: React.FC<QaWidgetTableProps> = ({
+    selectedQueue,
+    onOpenCase,
+}) => {
+    const theme = useTheme();
+    const isDark = theme.palette.mode === "dark";
+    const navigate = useNavigate();
+    const dispatch = useDispatch();
+    const openTabs = useSelector(selectOpenTabs);
+
+    const queueKey = resolveQaQueueKey(selectedQueue);
+    const title = QA_QUEUE_TITLES[queueKey] || "Pending Provider Completion";
+
+    // QA Manager Drawer State
+    const [isQaManagerDrawerOpen, setIsQaManagerDrawerOpen] = useState(false);
+    const [selectedQaManagerReviewer, setSelectedQaManagerReviewer] =
+        useState("Brian Kelly");
+    const [qaManagerComments, setQaManagerComments] = useState("");
+    const [showQaManagerToast, setShowQaManagerToast] = useState(false);
+
+    const selectedQaRows = useMemo<readonly QaRow[]>(() => {
+        switch (queueKey) {
+            case "pending-provider-completion":
+            case "initial-review":
+                return QA_SELECTED_ROWS;
+            case "pending-provider-correction":
+                return QA_REWORK_ROWS;
+            case "provider-resubmission":
+                return QA_PROVIDER_RESUBMISSION_ROWS;
+            case "fcr-rework":
+                return QA_FCR_REWORK_ROWS;
+            case "qa-hold":
+                return QA_HOLD_ROWS;
+            default:
+                return [];
+        }
+    }, [queueKey]);
+
+    const handleQaCaseIdClick = useCallback(
+        (
+            caseId: string,
+            examinationDetails: string,
+            appointmentDate: string
+        ) => {
+            const displayCaseId = caseId.trim();
+            if (!displayCaseId) return;
+
+            const dbq = resolveQaDbqFromExamination(examinationDetails ?? "");
+            const search = buildQaReviewSearch(dbq);
+
+            dispatch(
+                setActiveSectionForCase({
+                    caseId: displayCaseId,
+                    section: "qa",
+                })
+            );
+
+            const exists = openTabs.some((t) => t.id === displayCaseId);
+            const sub = appointmentDate || "";
+
+            if (exists) {
+                dispatch(
+                    updateTab({
+                        id: displayCaseId,
+                        label: displayCaseId,
+                        subtitle: sub,
+                    })
+                );
+            } else {
+                dispatch(
+                    addTabAction({
+                        id: displayCaseId,
+                        label: displayCaseId,
+                        subtitle: sub,
+                    })
+                );
+            }
+            dispatch(setActiveTabAction(displayCaseId));
+
+            const encoded = encodeId(displayCaseId);
+            navigate(`/cases/${encoded}/qa?${search}`);
+
+            if (onOpenCase) {
+                onOpenCase(displayCaseId);
+            }
+        },
+        [openTabs, dispatch, navigate, onOpenCase]
+    );
+
+    const handleQaProceed = useCallback(
+        (
+            caseId: string,
+            examinationDetails: string,
+            appointmentDate: string
+        ) => {
+            const displayCaseId = caseId.trim();
+            if (!displayCaseId) return;
+
+            const dbq = resolveQaDbqFromExamination(examinationDetails ?? "");
+            const search = buildQaReviewSearch(dbq);
+
+            dispatch(
+                setActiveSectionForCase({
+                    caseId: displayCaseId,
+                    section: "qa",
+                })
+            );
+
+            const exists = openTabs.some((t) => t.id === displayCaseId);
+            const sub = appointmentDate || "";
+
+            if (exists) {
+                dispatch(
+                    updateTab({
+                        id: displayCaseId,
+                        label: displayCaseId,
+                        subtitle: sub,
+                    })
+                );
+            } else {
+                dispatch(
+                    addTabAction({
+                        id: displayCaseId,
+                        label: displayCaseId,
+                        subtitle: sub,
+                    })
+                );
+            }
+            dispatch(setActiveTabAction(displayCaseId));
+
+            const encoded = encodeId(displayCaseId);
+            navigate(`/cases/${encoded}/qa?${search}`);
+
+            if (onOpenCase) {
+                onOpenCase(displayCaseId);
+            }
+        },
+        [openTabs, dispatch, navigate, onOpenCase]
+    );
+
+    const handleQaView = useCallback(
+        (
+            caseId: string,
+            examinationDetails: string,
+            appointmentDate: string
+        ) => {
+            const displayCaseId = caseId.trim();
+            if (!displayCaseId) return;
+
+            const dbq = resolveQaDbqFromExamination(examinationDetails ?? "");
+            const search = buildQaReviewSearch(dbq);
+
+            dispatch(
+                setActiveSectionForCase({
+                    caseId: displayCaseId,
+                    section: "qa",
+                })
+            );
+
+            const exists = openTabs.some((t) => t.id === displayCaseId);
+            const sub = appointmentDate || "";
+
+            if (exists) {
+                dispatch(
+                    updateTab({
+                        id: displayCaseId,
+                        label: displayCaseId,
+                        subtitle: sub,
+                    })
+                );
+            } else {
+                dispatch(
+                    addTabAction({
+                        id: displayCaseId,
+                        label: displayCaseId,
+                        subtitle: sub,
+                    })
+                );
+            }
+            dispatch(setActiveTabAction(displayCaseId));
+
+            const encoded = encodeId(displayCaseId);
+            navigate(`/cases/${encoded}/qa?${search}&mode=preview`);
+
+            if (onOpenCase) {
+                onOpenCase(displayCaseId);
+            }
+        },
+        [openTabs, dispatch, navigate, onOpenCase]
+    );
+
+    const handleManagerCaseIdClick = useCallback(
+        async (displayCaseId: string) => {
+            const caseId = displayCaseId.trim();
+            if (!caseId) return;
+
+            let routeId = caseId;
+            let subtitle = "";
+
+            try {
+                const results = await searchCasesByVetFedId(
+                    caseId,
+                    "VetFedCaseId"
+                );
+                const item = results?.[0];
+                if (item) {
+                    routeId = item.Id || item.InternalCaseNumber || caseId;
+                    subtitle = item.ReceivedDate
+                        ? new Date(item.ReceivedDate).toLocaleDateString(
+                              "en-US",
+                              {
+                                  month: "2-digit",
+                                  day: "2-digit",
+                                  year: "numeric",
+                              }
+                          )
+                        : "";
+                }
+            } catch {
+                // fallback
+            }
+
+            const label = displayCaseId || routeId;
+            const exists = openTabs.some((t) => t.id === routeId);
+            if (exists) {
+                dispatch(
+                    updateTab({
+                        id: routeId,
+                        label,
+                        subtitle,
+                    })
+                );
+            } else {
+                dispatch(
+                    addTabAction({
+                        id: routeId,
+                        label,
+                        subtitle,
+                    })
+                );
+            }
+            dispatch(setActiveTabAction(routeId));
+
+            const encoded = encodeId(routeId);
+            navigate(`/cases/${encoded}`);
+
+            if (onOpenCase) {
+                onOpenCase(displayCaseId);
+            }
+        },
+        [openTabs, dispatch, navigate, onOpenCase]
+    );
+
+    const handleOpenQaManagerDrawer = () => {
+        setIsQaManagerDrawerOpen(true);
+    };
+
+    const handleCloseQaManagerDrawer = () => {
+        setIsQaManagerDrawerOpen(false);
+    };
+
+    const handleSaveQaManagerReview = () => {
+        if (!selectedQaManagerReviewer || !qaManagerComments.trim()) {
+            return;
+        }
+        setIsQaManagerDrawerOpen(false);
+        setShowQaManagerToast(true);
+        setQaManagerComments("");
+    };
+
+    return (
+        <Box sx={{ width: "100%", pt: 1, pb: 1, pr: 1, overflowX: "auto" }}>
+            {queueKey !== "pending-qa-manager-review" && (
+                <QATable
+                    title={title}
+                    rows={selectedQaRows}
+                    queueKey={queueKey}
+                    onCaseIdClick={handleQaCaseIdClick}
+                    onProceed={handleQaProceed}
+                    onView={handleQaView}
+                />
+            )}
+
+            {queueKey === "pending-qa-manager-review" && (
+                <QAManagerTable
+                    title={title}
+                    rows={QA_MANAGER_ROWS}
+                    onCaseIdClick={handleManagerCaseIdClick}
+                    onAction={handleOpenQaManagerDrawer}
+                />
+            )}
+
+            {/* QA Manager Drawer */}
+            <ReusableDrawer
+                open={isQaManagerDrawerOpen}
+                onClose={handleCloseQaManagerDrawer}
+                onSave={handleSaveQaManagerReview}
+                onCancel={handleCloseQaManagerDrawer}
+                title="Return To QA Reviewer"
+                isDark={isDark}
+                btnText="Save"
+                drawerWidth={600}
+                drawerHeight="100vh"
+                cancelBtnVariant="contained"
+            >
+                <Box
+                    sx={{
+                        width: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "18px",
+                    }}
+                >
+                    <DrawerSelectField
+                        label="QA Reviewer"
+                        required
+                        value={selectedQaManagerReviewer}
+                        onChange={setSelectedQaManagerReviewer}
+                        options={QA_MANAGER_REVIEWER_OPTIONS.map((option) => ({
+                            id: option,
+                            label: option,
+                        }))}
+                        inputSx={{
+                            "& .MuiOutlinedInput-root": {
+                                minHeight: "45px",
+                            },
+                        }}
+                    />
+
+                    <DrawerMultilineField
+                        label="Comments"
+                        required
+                        value={qaManagerComments}
+                        placeholder="Type Comments"
+                        onChange={setQaManagerComments}
+                        inputSx={{
+                            "& .MuiOutlinedInput-root": {
+                                height: "182px",
+                                alignItems: "flex-start",
+                                padding: "10px",
+                            },
+                        }}
+                    />
+                </Box>
+            </ReusableDrawer>
+
+            {/* QA Manager Toast */}
+            {showQaManagerToast && (
+                <CommonToast
+                    title="Successful"
+                    description="The case has been successfully reassigned."
+                    autoClose={3000}
+                    top={65}
+                    right={10}
+                    onClose={() => setShowQaManagerToast(false)}
+                />
+            )}
+        </Box>
+    );
+};
+
+export default QaWidgetTable;
