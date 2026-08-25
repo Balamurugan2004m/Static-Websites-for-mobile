@@ -1,0 +1,167 @@
+import React, { useCallback } from "react";
+import { Box } from "@mui/material";
+import { useNavigate } from "react-router";
+import { useDispatch, useSelector, useStore } from "react-redux";
+import ProviderHome from "../../provider-home/provider-home";
+import { RootState } from "../../../store";
+import { decodeId } from "../../../utils/base64url";
+import {
+    addTab as addTabAction,
+    updateTab,
+    setActiveTab as setActiveTabAction,
+    selectOpenTabs,
+} from "../../../store/slice/tabs-slice";
+
+export interface ProviderWidgetTableProps {
+    selectedQueue: string;
+    onOpenCase?: (caseId: string) => void;
+}
+
+export const mapProviderStatToQueueKey = (stat: {
+    id?: string;
+    label?: string;
+    key?: string;
+}): string | null => {
+    const key = (stat.key || stat.id || "").toLowerCase();
+    const label = (stat.label || "").toLowerCase();
+
+    if (
+        key === "auto-queue-examination" ||
+        key === "autoqueueexamination" ||
+        key === "autoqueueexaminationcount" ||
+        label.includes("auto queue")
+    ) {
+        return "auto-queue-examination";
+    }
+    if (
+        key === "todays-appointments" ||
+        key === "todaysappointments" ||
+        key === "appointmentcount" ||
+        label.includes("today's appointments") ||
+        label.includes("today")
+    ) {
+        return "todays-appointments";
+    }
+    if (
+        key === "overdue-check-in" ||
+        key === "overduecheckin" ||
+        key === "pastappointmentcount" ||
+        label.includes("overdue check-in") ||
+        label.includes("overdue")
+    ) {
+        return "overdue-check-in";
+    }
+    if (
+        key === "appointments-pending-completion" ||
+        key === "appointmentspendingcompletion" ||
+        key === "pendingappointmentcount" ||
+        label.includes("pending completion")
+    ) {
+        return "appointments-pending-completion";
+    }
+    if (
+        key === "future-date-appointments" ||
+        key === "futuredateappointments" ||
+        key === "futureappointmentcount" ||
+        label.includes("future date") ||
+        label.includes("future")
+    ) {
+        return "future-date-appointments";
+    }
+    if (
+        key === "ace-imo-reworks" ||
+        key === "aceimoreworks" ||
+        key === "recordreviewscount" ||
+        label.includes("ace/imo") ||
+        label.includes("reworks")
+    ) {
+        return "ace-imo-reworks";
+    }
+    if (
+        key === "qa-returns" ||
+        key === "qareturns" ||
+        key === "rejectqccount" ||
+        label.includes("qa returns") ||
+        label.includes("returns")
+    ) {
+        return "qa-returns";
+    }
+    return null;
+};
+
+const ProviderWidgetTable: React.FC<ProviderWidgetTableProps> = ({
+    selectedQueue,
+    onOpenCase,
+}) => {
+    const navigate = useNavigate();
+    const store = useStore<RootState>();
+    const dispatch = useDispatch();
+    const openTabs = useSelector(selectOpenTabs);
+
+    const openCase = useCallback(
+        (
+            encodedId: string,
+            mode: "preview" | "edit",
+            _section?: string,
+            _appointment?: any,
+            _source?: string
+        ) => {
+            const caseId = decodeId(encodedId) || encodedId;
+            const reduxAppt = store.getState().providerHome.selectedAppointment;
+            const apptDate = reduxAppt?.AppointmentDate
+                ? new Date(reduxAppt.AppointmentDate).toLocaleDateString(
+                      "en-US",
+                      {
+                          month: "2-digit",
+                          day: "2-digit",
+                          year: "numeric",
+                      }
+                  )
+                : "";
+
+            const exists = openTabs.some((tab) => tab.id === caseId);
+            if (exists) {
+                dispatch(
+                    updateTab({ id: caseId, label: caseId, subtitle: apptDate })
+                );
+            } else {
+                dispatch(
+                    addTabAction({
+                        id: caseId,
+                        label: caseId,
+                        subtitle: apptDate,
+                    })
+                );
+            }
+            dispatch(setActiveTabAction(caseId));
+
+            const targetUrl =
+                mode === "preview"
+                    ? `/provider/${encodedId}?mode=preview`
+                    : `/provider/${encodedId}`;
+            navigate(targetUrl);
+
+            if (onOpenCase) {
+                onOpenCase(caseId);
+            }
+        },
+        [store, openTabs, dispatch, navigate, onOpenCase]
+    );
+
+    return (
+        <Box sx={{ width: "100%", pt: 1, pb: 1, pr: 1, overflowX: "auto" }}>
+            <ProviderHome
+                selectedQueue={selectedQueue}
+                showQueueTiles={false}
+                onViewCase={(enc) =>
+                    openCase(enc, "preview", undefined, null, "provider")
+                }
+                onEditCase={(enc) =>
+                    openCase(enc, "edit", undefined, null, "provider")
+                }
+            />
+        </Box>
+    );
+};
+
+export default ProviderWidgetTable;
