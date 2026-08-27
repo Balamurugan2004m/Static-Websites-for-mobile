@@ -1,0 +1,237 @@
+import React, { useCallback, useState, useMemo, useEffect } from "react";
+import { Box } from "@mui/material";
+import { useNavigate } from "react-router";
+import { useDispatch, useSelector } from "react-redux";
+import FcrTable from "../../fcr/fcr-table";
+import { FCR_QUEUE_TITLES, FCR_QUEUE_CARD_CONFIG } from "../../fcr/fcr-config";
+import type { FcrQueueKey, FcrRow } from "../../fcr/fcr-types";
+import { useCurrentAccountUser } from "../../provider-home/hooks/useCurrentAccountUser";
+import { RootState } from "../../../store";
+import { showToast } from "../../../utils/toast";
+import { TOAST_TYPES } from "../../../types/toast-types";
+import { useFcrQueueRows } from "../../../hooks/use-fcr-queries";
+
+import {
+    addTab as addTabAction,
+    updateTab,
+    setActiveTab as setActiveTabAction,
+    selectOpenTabs,
+} from "../../../store/slice/tabs-slice";
+import { setActiveSectionForCase } from "../../../store/slice/case-data-control-slice";
+
+export interface FcrWidgetTableProps {
+    selectedQueue: string;
+    onOpenCase?: (caseId: string) => void;
+}
+
+export const mapFcrStatToQueueKey = (stat: {
+    id?: string;
+    label?: string;
+    key?: string;
+}): string | null => {
+    const key = (stat.key || stat.id || "").toLowerCase();
+    const label = (stat.label || "").toLowerCase();
+
+    if (
+        key === "new-contention" ||
+        key === "newcontention" ||
+        label.includes("new contention") ||
+        label.includes("new")
+    ) {
+        return "new-contention";
+    }
+    if (
+        key === "rejected-contention" ||
+        key === "rejectedcontention" ||
+        label.includes("rejected contention") ||
+        label.includes("rejected")
+    ) {
+        return "rejected-contention";
+    }
+    if (
+        key === "re-review-contention" ||
+        key === "rereviewcontention" ||
+        label.includes("re-review") ||
+        label.includes("rereview")
+    ) {
+        return "re-review-contention";
+    }
+    return null;
+};
+
+const formatFcrSubtitle = (raw?: string) => {
+    if (!raw) return "";
+    return raw
+        .replace(/\s*(PDT|PST|MDT|MST|CDT|CST|EDT|EST|GMT[+-]\d{1,2}(?::\d{2})?)\s*$/i, "")
+        .replace(/\s*\n\s*/, ", ")
+        .trim();
+};
+
+const FcrWidgetTable: React.FC<FcrWidgetTableProps> = ({
+    selectedQueue,
+    onOpenCase,
+}) => {
+    const navigate = useNavigate();
+    const dispatch = useDispatch();
+    const openTabs = useSelector(selectOpenTabs);
+
+    const queueKey = (selectedQueue in FCR_QUEUE_TITLES ? selectedQueue : "new-contention") as FcrQueueKey;
+    const title = FCR_QUEUE_TITLES[queueKey] || "New Contention";
+
+    // Determine case type for the selected queue (mirrors FCRWorkQueue logic)
+    const selectedFcrCaseType = useMemo(() => {
+        const match = FCR_QUEUE_CARD_CONFIG.find((card) => card.key === queueKey);
+        return match?.caseType;
+    }, [queueKey]);
+
+    const authUser = useSelector((state: RootState) => state.authUser.authUser);
+    const { getCurrentAccountUser } = useCurrentAccountUser(authUser?.UserName);
+    const [authUserId, setAuthUserId] = useState<number | undefined>(undefined);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const accountUser = await getCurrentAccountUser();
+                if (!cancelled && accountUser?.UserId) {
+                    setAuthUserId(accountUser.UserId);
+                }
+            } catch {}
+        })();
+        return () => { cancelled = true; };
+    }, [getCurrentAccountUser]);
+
+    // Pagination state for widget (driven by API data)
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(25);
+
+    const {
+        data: fcrQueuePage,
+        isFetching: fcrRowsLoading,
+        isPending: fcrRowsPending,
+        isError: fcrRowsError,
+    } = useFcrQueueRows({
+        userId: authUserId,
+        caseType: selectedFcrCaseType,
+        pageNumber: page + 1,
+        pageSize: rowsPerPage,
+        search: "",
+        enabled: Boolean(selectedFcrCaseType),
+    });
+
+    useEffect(() => {
+        if (fcrRowsError) {
+            showToast("Failed to load FCR queue cases.", TOAST_TYPES.ERROR);
+        }
+    }, [fcrRowsError]);
+
+    const fcrTableRows = fcrQueuePage?.rows ?? [];
+    const totalRecords = fcrQueuePage?.totalRecords ?? 0;
+
+    const handlePageChange = (newPage: number) => {
+        setPage(newPage);
+    };
+
+    const handleRowsPerPageChange = (newRowsPerPage: number) => {
+        setRowsPerPage(newRowsPerPage);
+        setPage(0);
+    };
+
+    // Case ID click — opens case in Work Queues in preview mode
+    const handleCaseIdClickRow = useCallback(
+        (row: FcrRow) => {
+            const displayCaseId = String(row.caseId ?? "").trim();
+            const esrId = String((row as any).examSchedulingRequestId ?? "").trim();
+            if (!displayCaseId && !esrId) return;
+
+            const routeId = esrId || displayCaseId;
+            const subtitle = formatFcrSubtitle(row.fcrDate);
+            const label = displayCaseId && displayCaseId !== "—" ? displayCaseId : routeId;
+
+            const existingTab = openTabs.find((t) => t.id === routeId || t.id === displayCaseId);
+            if (existingTab) {
+                dispatch(updateTab({ id: existingTab.id, label, subtitle }));
+                dispatch(setActiveTabAction(existingTab.id));
+            } else {
+                dispatch(addTabAction({ id: routeId, label, subtitle }));
+                dispatch(setActiveTabAction(routeId));
+            }
+
+            navigate("/work-queues", {
+                state: {
+                    activeTab: "Final Contention Review",
+                    openFcr: true,
+                    fcrRow: row,
+                    fcrMode: "preview",
+                },
+            });
+
+            if (onOpenCase) onOpenCase(displayCaseId);
+        },
+        [openTabs, dispatch, navigate, onOpenCase]
+    );
+
+    // Proceed — opens case in Work Queues in edit mode with FCR section
+    const handleProceedRow = useCallback(
+        (row: FcrRow) => {
+            const displayCaseId = String(row.caseId ?? "").trim();
+            const esrId = String((row as any).examSchedulingRequestId ?? "").trim();
+            if (!displayCaseId && !esrId) return;
+
+            const routeId = esrId || displayCaseId;
+            const subtitle = formatFcrSubtitle(row.fcrDate);
+            const label = displayCaseId && displayCaseId !== "—" ? displayCaseId : routeId;
+
+            const existingTab = openTabs.find((t) => t.id === routeId || t.id === displayCaseId);
+            if (existingTab) {
+                dispatch(updateTab({ id: existingTab.id, label, subtitle }));
+                dispatch(setActiveTabAction(existingTab.id));
+            } else {
+                dispatch(addTabAction({ id: routeId, label, subtitle }));
+                dispatch(setActiveTabAction(routeId));
+            }
+
+            dispatch(setActiveSectionForCase({ caseId: routeId, section: "final-contention-review" }));
+
+            navigate("/work-queues", {
+                state: {
+                    activeTab: "Final Contention Review",
+                    openFcr: true,
+                    fcrRow: row,
+                    fcrMode: "edit",
+                },
+            });
+
+            if (onOpenCase) onOpenCase(displayCaseId);
+        },
+        [openTabs, dispatch, navigate, onOpenCase]
+    );
+
+    // Unused imports cleanup — openTabs still needed for dedup check above
+
+    return (
+        <Box  sx={{ width: "calc(100% + 32px)", mx: -2, overflowX: "hidden",  mt: -2.1,
+        "& .MuiDataGrid-columnHeader": {
+            paddingLeft: "25px !important",
+        },
+        "& .MuiDataGrid-cell": {
+            paddingLeft: "25px !important",
+        },
+        }}>
+            <FcrTable
+                title={title}
+                rows={fcrTableRows}
+                totalRecords={totalRecords}
+                page={page}
+                rowsPerPage={rowsPerPage}
+                onPageChange={handlePageChange}
+                onRowsPerPageChange={handleRowsPerPageChange}
+                loading={fcrRowsPending || fcrRowsLoading}
+                onCaseIdClick={handleCaseIdClickRow}
+                onProceed={handleProceedRow}
+            />
+        </Box>
+    );
+};
+
+export default FcrWidgetTable;

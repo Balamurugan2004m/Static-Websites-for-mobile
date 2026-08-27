@@ -1,0 +1,911 @@
+import { useEffect, useMemo, useState } from "react";
+import { Box, Typography, IconButton, useTheme } from "@mui/material";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import EditIcon from "@mui/icons-material/Edit";
+import HighlightOffIcon from "@mui/icons-material/HighlightOff";
+import { useStore } from "react-redux";
+import { useSelector } from "react-redux";
+import ProviderHome from "../provider-home/provider-home";
+import ProviderCaseEmbed from "../provider-home/provider-case-embed";
+import CaseMgmtEmbed from "./case-mgmt-embed";
+import CaseManagementRegular from "../case-management-regular";
+import ProjectMgmtOfficeWorkQueue from "../project_mgmt_office_work_queue";
+import { RootState } from "../../store";
+import { showToast } from "../../utils/toast";
+import { useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useDispatch,} from "react-redux";
+import { useAuth } from "../../contexts/AuthContext";
+import {
+    CASE_MANAGEMENT_QUEUE_CLAIMS,
+    CONTACT_CENTER_QUEUE_CLAIMS,
+    DIAGNOSTICS_ADMIN_QUEUE_CLAIMS,
+    FACILITY_DIAGNOSTIC_QUEUE_CLAIMS,
+    FCR_QUEUE_CLAIMS,
+    hasAnyAllowedClaim,
+    isClaimAllowed,
+    PROJECT_MANAGEMENT_OFFICE_QUEUE_CLAIMS,
+    PROVIDER_QUEUE_CLAIMS,
+    QA_QUEUE_CLAIMS,
+    WorkQueueClaims,
+} from "../../constants/work-queue-claims";
+import { TOAST_TYPES } from "../../types/toast-types";
+import FacilityDiagnostics from "../facility-diagnostics";
+import ContactCenter from "../contact-center/contact-center";
+import QAWorkQueue from "../qa-workqueue/qa-workqueue";
+import FCRWorkQueue from "../fcr/fcr-workqueue";
+import { WorkQueuePageSkeleton } from "../../ui/work-queue-tab-skeleton";
+import {
+  addTab as addTabAction,
+  updateTab,
+  setActiveTab as setActiveTabAction,
+  selectOpenTabs,
+} from "../../store/slice/tabs-slice"
+import { encodeId, decodeId } from "../../utils/base64url";
+import { searchCasesByVetFedId } from "../../services/case-search";
+import type { TodaysDtAppointment } from "../facility-diagnostics/mock-data";
+import { resolveQaDbqFromExamination, type QaDbqRow } from "../case-search/qa/qa-review-utils";
+
+import { setActiveSectionForCase } from "../../store/slice/case-data-control-slice";
+import DiagnosticsAdminWorkQueue from "../diagnostics-admin/diagnostics-admin-workqueue";
+import type {
+    DiagnosticsAdminAfterAppointmentRow,
+} from "../diagnostics-admin/diagnostics-admin-types";
+import DiagnosticsAdminActionDrawer from "../diagnostics-admin/diagnostics-admin-action-drawer";
+/** Contention opened as an FCR sub-tab (same shape as ?fcrOpen=…&fcrLabel=…). */
+interface FcrOpenContention {
+    examSchedulingRequestId: string;
+    examRelatedContentionId: string;
+    label: string;
+}
+
+interface OpenCaseTab {
+    encodedId: string;
+    caseId: string;
+    displayCaseId?: string;
+    apptDate: string;
+    mode: "preview" | "edit";
+    section?: string;
+    appointment: TodaysDtAppointment | null;
+    initialDbq?: string;
+    source: "case-management" | "provider" | "facility-diagnostic";
+    dbq?: QaDbqRow | null;
+     originTab?: Tab;
+    /** When set with section "fcr", land on this contention tab (like QA dbq). */
+    fcrContention?: FcrOpenContention | null;
+}
+
+const ALL_TABS = [
+    "Case Management",
+    "Contact Center",
+    "Facility Diagnostic",
+    "Diagnostics Admin",
+    "QA",
+    "Final Contention Review",
+    "Project Management Office",
+    // Provider Liaison is gone as a tab — its only queue (Exam Exceptions) is a tile
+    // inside Case Management.
+    "Provider",
+] as const;
+
+type Tab = (typeof ALL_TABS)[number];
+
+const WorkQueues = () => {
+    const theme = useTheme();
+    const wq = theme.custom?.colors.workQueues;
+    const isDark = theme.palette.mode === "dark";
+    const location = useLocation();
+    const { hasClaim, hasRole, claims, isLoading: isAuthLoading, token } = useAuth();
+    const store = useStore<RootState>();
+
+    const visibleTabs = useMemo(() => {
+        const hasWorkQueue = isClaimAllowed(hasClaim, WorkQueueClaims.workQueue);
+        const hasProviderAccess =
+            hasAnyAllowedClaim(hasClaim, PROVIDER_QUEUE_CLAIMS) || hasRole("Provider");
+        const isProviderScoped = hasProviderAccess && !hasWorkQueue;
+
+        // Provider JWT (provider queue claims or Provider role, no admin "Work Queue") → Provider tab only.
+        if (isProviderScoped) {
+            return ALL_TABS.filter((tab) => tab === "Provider");
+        }
+
+        // Admin / staff — show a tab only when the user has Allowed access to a tile in that section.
+        return ALL_TABS.filter((tab) => {
+            switch (tab) {
+                case "Case Management":
+                    return hasAnyAllowedClaim(hasClaim, CASE_MANAGEMENT_QUEUE_CLAIMS);
+                case "Contact Center":
+                    return hasAnyAllowedClaim(hasClaim, CONTACT_CENTER_QUEUE_CLAIMS);
+                case "QA":
+                    return hasAnyAllowedClaim(hasClaim, QA_QUEUE_CLAIMS);
+                case "Provider":
+                    return hasAnyAllowedClaim(hasClaim, PROVIDER_QUEUE_CLAIMS);
+                case "Diagnostics Admin":
+                    return hasAnyAllowedClaim(hasClaim, DIAGNOSTICS_ADMIN_QUEUE_CLAIMS);
+                case "Project Management Office":
+                    return hasAnyAllowedClaim(hasClaim, PROJECT_MANAGEMENT_OFFICE_QUEUE_CLAIMS);
+                case "Final Contention Review":
+                    return hasAnyAllowedClaim(hasClaim, FCR_QUEUE_CLAIMS);
+                case "Facility Diagnostic":
+                    return hasAnyAllowedClaim(hasClaim, FACILITY_DIAGNOSTIC_QUEUE_CLAIMS);
+
+                default:
+                    return false;
+            }
+        });
+    }, [hasClaim, hasRole]);
+
+    const [activeTab, setActiveTab] = useState<Tab>(ALL_TABS[0]);
+
+    const effectiveTab = useMemo((): Tab | null => {
+        if (visibleTabs.length === 0) return null;
+        if (visibleTabs.includes(activeTab)) return activeTab;
+        return visibleTabs[0];
+    }, [visibleTabs, activeTab]);
+
+    const isFcrTab = effectiveTab === "Final Contention Review";
+const [diagnosticsAdminDrawer, setDiagnosticsAdminDrawer] =
+    useState<"reschedule" | "upload-error" | null>(null);
+
+const [rescheduleRow, setRescheduleRow] =
+    useState<DiagnosticsAdminAfterAppointmentRow | null>(null);
+
+    // openCases holds all case tabs opened via "View" / "Edit or Review" in the queue.
+    // activeCaseId is the currently displayed one; null means the queue list is shown.
+    // Tabs stay open until the user explicitly closes them (X) or logs out.
+    const [openCases, setOpenCases] = useState<OpenCaseTab[]>([]);
+    const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
+    // When a case is opened via "View" / "Edit or Review" in the Provider tab, its
+    // base64url-encoded id lives here and the case view renders inline (no route
+    // change). null → the normal queue tab experience is shown. `caseMode` toggles
+    // read-only preview (View, eye icon) vs. editable (Edit or Review, pencil icon).
+    const [_viewedCaseId, setViewedCaseId] = useState<string | null>(null);
+    const [_viewedCaseNumber, setViewedCaseNumber] = useState<string | null>(null);
+    const [_caseMode, setCaseMode] = useState<"preview" | "edit">("preview");
+    const [_openDiagnostic] = useState(false);
+
+    useEffect(() => {
+        if (visibleTabs.length === 0) return;
+        const fromNav = location.state?.activeTab as Tab | undefined;
+        if (fromNav && visibleTabs.includes(fromNav)) {
+            setActiveTab(fromNav);
+            return;
+        }
+        setActiveTab((current) =>
+            current && visibleTabs.includes(current) ? current : visibleTabs[0]
+        );
+    }, [visibleTabs, location.state?.activeTab]);
+
+    useEffect(() => {
+        if (activeCaseId && !openCases.some((caseTab) => caseTab.encodedId === activeCaseId)) {
+            setActiveCaseId(null);
+        }
+    }, [activeCaseId, openCases]);
+
+
+    // Set from openCase's `section` arg; no caller passes one now that the Provider Liaison tab
+    // is gone, so it stays undefined and cases land on Case Details.
+    const [_viewedCaseSection, setViewedCaseSection] = useState<string | undefined>(undefined);
+    const [_viewedCaseAppointment, setViewedCaseAppointment] = useState<TodaysDtAppointment | null>(null);
+    const [_selectedDbq] = useState<string | null>(null);
+    const [showRescheduleToast, setShowRescheduleToast] = useState(false);
+    const [_followUpRow, setFollowUpRow] = useState<DiagnosticsAdminAfterAppointmentRow | null>(null);
+
+    const dispatch = useDispatch();
+    const navigate = useNavigate();
+    const openTabs = useSelector(selectOpenTabs);
+
+    const openCase = (
+        encodedId: string,
+        mode: "preview" | "edit",
+        section?: string,
+        appointment?: TodaysDtAppointment | null,
+        source: OpenCaseTab["source"] = "provider",
+        displayCaseId?: string,
+        presetApptDate?: string,
+        initialDbq?: string,
+	    dbq?: QaDbqRow | null,
+        fcrContention?: FcrOpenContention | null
+    ) => {
+        const caseId = appointment ? String(appointment.caseId) : (decodeId(encodedId) || encodedId);
+        // Capture appointment date at open time. For Provider tab cases (no appointment obj),
+        // read AppointmentDate synchronously from Redux — dispatch(setSelectedAppointmentAction)
+        // runs before onViewCase is called so the store is already updated.
+        const reduxAppt = store.getState().providerHome.selectedAppointment;
+        const computedApptDate = appointment?.appointmentDate
+            ? appointment.appointmentDate
+                .replace(/\s*(PDT|PST|MDT|MST|CDT|CST|EDT|EST)\s*$/, "")
+                .replace(/\s*\n\s*/, ", ")
+            : formatApptDate(reduxAppt?.AppointmentDate);
+        const apptDate = presetApptDate ?? computedApptDate;
+        const newTab: OpenCaseTab = {
+            encodedId,
+            caseId,
+            displayCaseId,
+            apptDate,
+            mode,
+            section,
+            appointment: appointment ?? null,
+            initialDbq,
+            source,
+            dbq: dbq ?? null,
+            fcrContention: fcrContention ?? null,
+        };
+        setOpenCases((prev) => {
+            if (prev.find((t) => t.encodedId === encodedId)) {
+                return prev.map((t) =>
+                    t.encodedId === encodedId
+                        ? {
+                              ...t,
+                              mode,
+                              section,
+                              initialDbq,
+                              dbq: dbq ?? t.dbq,
+                              displayCaseId: displayCaseId ?? t.displayCaseId,
+                              fcrContention:
+                                  fcrContention !== undefined
+                                      ? fcrContention
+                                      : t.fcrContention,
+                          }
+                        : t
+                );
+            }
+            return [...prev, newTab];
+        });
+        setActiveCaseId(encodedId);
+        setCaseMode(mode);
+        setViewedCaseId(encodedId);
+        setViewedCaseSection(section);
+        if (appointment !== undefined) {
+            setViewedCaseAppointment(appointment);
+        }
+        if (displayCaseId) {
+            setViewedCaseNumber(displayCaseId);
+        }
+    };
+
+    const [_resolvingCaseId, setResolvingCaseId] = useState<string | null>(null);
+
+    const formatApptDate = (raw?: string) => {
+        if (!raw) return "";
+        const d = new Date(raw);
+        if (Number.isNaN(d.getTime())) return "";
+        return `${d.toLocaleDateString("en-US", {
+            month: "2-digit",
+            day: "2-digit",
+            year: "numeric",
+        })}, ${d.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true,
+        })}`;
+    };
+
+    const openCaseFromManagement = async (displayCaseId: string) => {
+        setResolvingCaseId(displayCaseId);
+        try {
+            // Resolve display case ID → ESR viewId exactly as case search does
+            const results = await searchCasesByVetFedId(displayCaseId, "VetFedCaseId");
+            const item = results[0];
+            if (!item) {
+                showToast("Case not found", TOAST_TYPES.ERROR);
+                return;
+            }
+            const viewId: string = item.Id || item.InternalCaseNumber || displayCaseId;
+            // Format ReceivedDate from the API to show in the tab (same as case search subtitle)
+            const receivedDate = item.ReceivedDate
+                ? formatApptDate(item.ReceivedDate)
+                : "";
+            openCase(encodeId(viewId), "preview", undefined, null, "case-management", displayCaseId, receivedDate);
+        } catch {
+            showToast("Failed to load case", TOAST_TYPES.ERROR);
+        } finally {
+            setResolvingCaseId(null);
+        }
+    };
+
+    const closeCase = (encodedId: string) => {
+        setOpenCases(prev => prev.filter(t => t.encodedId !== encodedId));
+        setActiveCaseId(prev => (prev === encodedId ? null : prev));
+    };
+
+    const handleFacilityDiagnosticView = (appointment: TodaysDtAppointment) => {
+        const encodedId = encodeId(String(appointment.caseId));
+        openCase(encodedId, "edit", undefined, appointment, "facility-diagnostic");
+    };
+    const chipSx = {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        bgcolor: wq?.chipBg,
+        borderRadius: "5px",
+        px: "12.5px",
+        py: "7.5px",
+    } as const;
+
+    const chipTextSx = {
+        color: wq?.chipText,
+        fontSize: 12,
+        fontWeight: 700,
+        lineHeight: "normal",
+        whiteSpace: "nowrap",
+    } as const;
+
+     // Figma node 597:471 — the Work Queues header chip gains a blue bottom border
+    // and a soft drop-shadow while the queue list is the active view. Removed when
+    // a case-detail is open so the chip reads as a plain breadcrumb/nav button.
+    const chipUnderlineSx = {
+        borderBottom: `2px solid ${wq?.chipText ?? "#244794"}`,
+        boxShadow: "0px 4px 5px rgba(0,0,0,0.1)",
+    } as const;
+
+    const handleCaseIdClick = (
+    caseId: string,
+    date?: string
+) => {
+    const routeId = caseId.trim();
+
+    if (!routeId) return;
+
+    const label = routeId;
+    const subtitle = date || "";
+
+    const exists = openTabs.some((tab) => tab.id === routeId);
+
+    if (exists) {
+        dispatch(
+            updateTab({
+                id: routeId,
+                label,
+                subtitle,
+            })
+        );
+    } else {
+        dispatch(
+            addTabAction({
+                id: routeId,
+                label,
+                subtitle,
+            })
+        );
+    }
+
+    dispatch(setActiveTabAction(routeId));
+
+    navigate(`/case-details/${encodeId(routeId)}/case-details-screen`);
+   };
+
+const handleDiagnosticProceed = (
+    caseId: string,
+    appointmentDate: string
+) => {
+    const encodedId = encodeId(caseId.trim());
+    openCase(
+        encodedId,
+        "edit",
+        undefined,
+        {
+            caseId: caseId.trim(),
+            appointmentDate,
+        } as TodaysDtAppointment,
+        "facility-diagnostic",
+        caseId.trim(),
+        appointmentDate
+    );
+};
+
+useEffect(() => {
+    const state = location.state as {
+        openDiagnostic?: boolean;
+        caseId?: string;
+        appointmentDate?: string;
+        openFcr?: boolean;
+        fcrRow?: any;
+        fcrMode?: "preview" | "edit";
+    } | null;
+
+    if (
+        state?.openDiagnostic &&
+        state.caseId &&
+        state.appointmentDate
+    ) {
+        handleDiagnosticProceed(
+            state.caseId,
+            state.appointmentDate
+        );
+
+        navigate(location.pathname, {
+            replace: true,
+            state: {},
+        });
+    } else if (state?.openFcr && state.fcrRow) {
+        if (state.fcrMode === "edit") {
+            handleFcrProceed(state.fcrRow);
+        } else {
+            openFcrCaseFromRow(state.fcrRow, "preview");
+        }
+
+        navigate(location.pathname, {
+            replace: true,
+            state: {},
+        });
+    }
+}, [location.state]);
+
+const handleQaProceed = (
+    caseId: string,
+    examinationDetails: string, 
+    appointmentDate: string
+) => {
+    const displayCaseId = caseId.trim();
+    if (!displayCaseId) return;
+
+    const dbq = resolveQaDbqFromExamination(examinationDetails ?? "");
+    openCase(
+        encodeId(displayCaseId),
+        "edit",
+        "qa-review",
+        null,
+        "case-management",
+        displayCaseId,
+        appointmentDate,
+        undefined,
+        dbq
+    );
+};
+
+const handleQaView = (
+    caseId: string,
+    examinationDetails: string,
+    appointmentDate: string
+) => {
+    const displayCaseId = caseId.trim();
+    if (!displayCaseId) return;
+
+    const dbq = resolveQaDbqFromExamination(examinationDetails ?? "");
+    openCase(
+        encodeId(displayCaseId),
+        "preview",
+        "qa-review",
+        null,
+        "case-management",
+        displayCaseId,
+        appointmentDate,
+        undefined,
+        dbq
+    );
+};
+const handleQaCaseIdClick = (
+    caseId: string,
+    examinationDetails: string,
+    appointmentDate: string
+) => {
+    const displayCaseId = caseId.trim();
+
+    if (!displayCaseId) return;
+
+    const dbq = resolveQaDbqFromExamination(
+        examinationDetails ?? ""
+    );
+      openCase(
+        encodeId(displayCaseId),
+        "preview",
+        "qa-review",
+        null,
+        "case-management",
+        displayCaseId,
+        appointmentDate,
+        undefined,
+        dbq
+    );
+};
+const handleFcrProceed = async (row: {
+    caseId: string;
+    examSchedulingRequestId?: string;
+    examRelatedContentionId?: string;
+    contentionName?: string;
+    fcrDate?: string;
+}) => {
+    const displayCaseId = row.caseId.trim();
+    let esrId = (row.examSchedulingRequestId ?? "").trim();
+    if (!displayCaseId && !esrId) return;
+
+    // Case APIs expect ExamSchedulingRequestId (GUID), not InternalCaseNumber.
+    if (!esrId && displayCaseId && displayCaseId !== "—") {
+        try {
+            const results = await searchCasesByVetFedId(displayCaseId, "VetFedCaseId");
+            const item = results[0];
+            esrId = String(item?.Id || item?.InternalCaseNumber || "").trim();
+        } catch {
+            showToast("Failed to resolve case", TOAST_TYPES.ERROR);
+            return;
+        }
+    }
+
+    const routeId = esrId || displayCaseId;
+    if (!routeId || routeId === "—") {
+        showToast("Case not found", TOAST_TYPES.ERROR);
+        return;
+    }
+
+    const contentionId = String(row.examRelatedContentionId ?? "").trim();
+    const contentionLabel =
+        String(row.contentionName ?? "").trim() || contentionId || "Contention";
+    const fcrContention: FcrOpenContention | null =
+        esrId && contentionId
+            ? {
+                  examSchedulingRequestId: esrId,
+                  examRelatedContentionId: contentionId,
+                  label: contentionLabel,
+              }
+            : null;
+
+    openCase(
+        encodeId(routeId),
+        "edit",
+        "final-contention-review",
+        null,
+        "case-management",
+        displayCaseId && displayCaseId !== "—" ? displayCaseId : routeId,
+        row.fcrDate || undefined,
+        undefined,
+        null,
+        fcrContention
+    );
+};
+
+const openFcrCaseFromRow = async (
+    row: {
+        caseId: string;
+        examSchedulingRequestId?: string;
+        fcrDate?: string;
+    },
+    mode: "preview" | "edit"
+) => {
+    const displayCaseId = String(row.caseId ?? "").trim();
+    let esrId = String(row.examSchedulingRequestId ?? "").trim();
+    if (!displayCaseId && !esrId) return;
+
+    if (!esrId && displayCaseId && displayCaseId !== "—") {
+        try {
+            const results = await searchCasesByVetFedId(displayCaseId, "VetFedCaseId");
+            const item = results[0];
+            esrId = String(item?.Id || item?.InternalCaseNumber || "").trim();
+        } catch {
+            showToast("Failed to resolve case", TOAST_TYPES.ERROR);
+            return;
+        }
+    }
+
+    const routeId = esrId || displayCaseId;
+    if (!routeId || routeId === "—") {
+        showToast("Case not found", TOAST_TYPES.ERROR);
+        return;
+    }
+
+    openCase(
+        encodeId(routeId),
+        mode,
+        "final-contention-review",
+        null,
+        "case-management",
+        displayCaseId && displayCaseId !== "—" ? displayCaseId : routeId,
+        row.fcrDate || undefined
+    );
+};
+
+    const handleDiagnosticsAdminRescheduleSave = (
+        requester: string,
+        reason: string,
+        notes: string,
+        veteranTravelled: string,
+    ) => {
+        setDiagnosticsAdminDrawer(null);
+    
+        setShowRescheduleToast(true);
+    
+        console.log({
+            requester,
+            reason,
+            notes,
+            veteranTravelled,
+            row: rescheduleRow,
+        });
+    };
+    const handleDiagnosticsAdminUploadErrorSave = (
+        comment: string,
+    ) => {
+        setDiagnosticsAdminDrawer(null);
+    
+        console.log("Upload Error Comment:", comment);
+    
+    };
+  
+    const activeOpenCase = activeCaseId
+        ? openCases.find((caseTab) => caseTab.encodedId === activeCaseId) ?? null
+        : null;
+
+    const isPageLoading = isAuthLoading || (Boolean(token) && claims.length === 0);
+
+    // ── Page shell: case tabs/embed stay mounted; queue list hides while a case is active ──
+    return (
+        <Box>
+            {/* Case tab strip — only when cases are open */}
+            {openCases.length > 0 && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: "20px", flexWrap: "wrap" }}>
+                    {/* Work Queues chip — click to return to queue without closing any tabs */}
+                    <Box
+                        component="button"
+                        type="button"
+                        onClick={() => {
+                            setViewedCaseId(null);
+                            setViewedCaseAppointment(null);
+                            setActiveCaseId(null);
+                        }}
+                     sx={{
+                        ...chipSx,
+                        border: "none",
+                        cursor: "pointer",
+                        // Show underline only when the queue list is active (no case open).
+                        // Cleared while a case detail is displayed so the chip reads as a
+                        // plain "go back" breadcrumb rather than the current-section indicator.
+                        ...(activeCaseId === null && chipUnderlineSx),
+                    }}
+                    >
+                        <Typography sx={chipTextSx}>Work Queues</Typography>
+                    </Box>
+
+                    {/* Open case tabs — persist until explicitly closed */}
+                    {openCases.map(caseTab => {
+                        const isActiveTab = activeCaseId === caseTab.encodedId;
+                        const apptDate = caseTab.apptDate;
+                        return (
+                            <Box
+                                key={caseTab.encodedId}
+                                component="button"
+                                type="button"
+                                onClick={() => setActiveCaseId(caseTab.encodedId)}
+                                sx={{
+                                    position: "relative",
+                                    width: "185px",
+                                    height: "42px",
+                                    flexShrink: 0,
+                                    borderRadius: "5px",
+                                    bgcolor: "#F5F5F5",
+                                    boxSizing: "border-box",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    padding: 0,
+                                    font: "inherit",
+                                    outline: "none",
+                                }}
+                            >
+                                <RefreshIcon sx={{ position: "absolute", width: "15px", height: "15px", left: "3px", top: "13px", color: "#244794" }} />
+                                <Box sx={{ position: "absolute", left: "26px", top: "0px", width: "112px", height: "42px" }}>
+                                    <Typography sx={{ position: "absolute", left: 0, top: "6px", width: "112px", height: "15px", fontWeight: 700, fontSize: "12px !important", lineHeight: "15px", color: "#244794", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                        Case ID: {caseTab.displayCaseId ?? caseTab.caseId}
+                                    </Typography>
+                                    {apptDate && (
+                                        <Typography sx={{ position: "absolute", left: 0, top: "24px", width: "112px", height: "12px", fontWeight: 400, fontSize: "10px !important", lineHeight: "12px", color: "#244794", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                            {apptDate}
+                                        </Typography>
+                                    )}
+                                </Box>
+                                {caseTab.mode === "edit" ? (
+                                    <EditIcon sx={{ position: "absolute", width: "15px", height: "15px", left: "144px", top: "13px", color: "#787878" }} />
+                                ) : (
+                                    <VisibilityIcon sx={{ position: "absolute", width: "15px", height: "15px", left: "144px", top: "13px", color: "#787878" }} />
+                                )}
+                                <IconButton
+                                    aria-label="Close case tab"
+                                    size="small"
+                                    onClick={(e) => { e.stopPropagation(); closeCase(caseTab.encodedId); }}
+                                    sx={{ position: "absolute", width: "15px", height: "15px", right: "3px", top: "13px", padding: 0, color: "#787878" }}
+                                >
+                                    <HighlightOffIcon sx={{ width: "15px", height: "15px" }} />
+                                </IconButton>
+                                {isActiveTab && (
+                                    <Box sx={{ position: "absolute", width: "179px", height: "1px", left: "3px", bottom: 0, backgroundColor: "#244794" }} />
+                                )}
+                            </Box>
+                        );
+                    })}
+                </Box>
+            )}
+
+            {/* Active case embed — only one mounted at a time to avoid Redux state conflicts */}
+            {activeOpenCase && (
+                activeOpenCase.source === "case-management" ? (
+                    <CaseMgmtEmbed
+                        key={`${activeCaseId}-${activeOpenCase.section ?? ""}-${activeOpenCase.dbq?.dbqId ?? ""}-${activeOpenCase.displayCaseId ?? ""}-${activeOpenCase.fcrContention?.examRelatedContentionId ?? ""}`}
+                        encodedId={activeCaseId!}
+                        initialSection={activeOpenCase.section}
+                        initialDbq={activeOpenCase.dbq}
+                        displayCaseId={activeOpenCase.displayCaseId}
+                        initialFcrContention={activeOpenCase.fcrContention}
+                    />
+                ) : (
+                    <ProviderCaseEmbed
+                        key={activeCaseId}
+                        encodedId={activeCaseId!}
+                        readOnly={activeOpenCase.mode === "preview"}
+                        initialSection={activeOpenCase.section}
+                        openDiagnostic={!!activeOpenCase.appointment}
+                        initialDbq={activeOpenCase.initialDbq}
+                    />
+                )
+            )}
+
+            {/* Queue content — always mounted so active tab, scroll position and data are preserved on return */}
+            <Box sx={{ display: activeOpenCase ? "none" : "block" }}>
+            {isPageLoading ? (
+                <WorkQueuePageSkeleton showPageChip={openCases.length === 0} />
+            ) : (
+            <>
+            {/* Page chip — skipped when case tab strip already shows Work Queues */}
+            {openCases.length === 0 && (
+                <Box sx={{ ...chipSx, mb: "20px", ...chipUnderlineSx }}>
+                <Typography sx={chipTextSx}>Work Queues</Typography>
+            </Box>
+            )}
+
+                    {/* Tab row */}
+                    <Box
+                        sx={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "8px",
+                            mb: "24px",
+                        }}
+                    >
+                        {visibleTabs.map((tab) => {
+                            const isActive = tab === effectiveTab;
+                            return (
+                                <Box
+                                    key={tab}
+                                    component="button"
+                                    type="button"
+                                    onClick={() => setActiveTab(tab)}
+                                    sx={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        px: "10px",
+                                        py: "7.5px",
+                                        borderRadius: "5px",
+                                        border: `1px solid ${isActive ? wq?.tabActiveBg : wq?.tabInactiveBorder}`,
+                                        bgcolor: isActive ? wq?.tabActiveBg : wq?.tabInactiveBg,
+                                        color: isActive ? wq?.tabActiveText : wq?.tabInactiveText,
+                                        fontSize: "10.5px",
+                                        fontWeight: 400,
+                                        lineHeight: "14px",
+                                        whiteSpace: "nowrap",
+                                        cursor: "pointer",
+                                        font: "inherit",
+                                        outline: "none",
+                                        transition: "background-color 0.15s, color 0.15s, border-color 0.15s",
+                                        "&:hover": {
+                                            opacity: isActive ? 1 : 0.8,
+                                        },
+                                    }}
+                                >
+                                    {tab}
+                                </Box>
+                            );
+                        })}
+                    </Box>
+
+                    {/* Tab content */}
+                    {visibleTabs.length === 0 ? (
+                        <Box
+                            sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minHeight: 320,
+                            }}
+                        >
+                            <Typography
+                                sx={{
+                                    color: wq?.emptyText,
+                                    fontSize: 16,
+                                    fontWeight: 600,
+                                    fontStyle: "italic",
+                                }}
+                            >
+                                No work queue sections are available for your role.
+                            </Typography>
+                        </Box>
+                    ) : effectiveTab === "Case Management" ? (
+                        <CaseManagementRegular
+                            onOpenCase={openCaseFromManagement}
+                            onEditOrViewCase={(encodedId, mode) => openCase(encodedId, mode, undefined, null, "provider")}
+                        />
+                    ) : effectiveTab === "Provider" ? (
+                        <ProviderHome
+                            onViewCase={(enc) => openCase(enc, "preview", undefined, null, "provider")}
+                            onEditCase={(enc) => openCase(enc, "edit", undefined, null, "provider")}
+                        />
+                    ) : effectiveTab === "Project Management Office" ? (
+                        <ProjectMgmtOfficeWorkQueue />
+                    ) : effectiveTab === "Facility Diagnostic" ? (
+                        <FacilityDiagnostics
+                            onViewCase={handleFacilityDiagnosticView}
+                        />
+                        ) : effectiveTab === "Contact Center" ? (
+                            <ContactCenter />
+                    ) : effectiveTab === "Diagnostics Admin" ? (
+                        <DiagnosticsAdminWorkQueue
+                        onCaseIdClick={(caseId, appointmentDate) =>
+                            handleFacilityDiagnosticView({
+                                caseId,
+                                appointmentDate,
+                            } as TodaysDtAppointment)
+                        }
+                        onProceed={handleDiagnosticProceed}
+                    />
+                                               
+                    ) : effectiveTab === "QA" ? (
+                        <QAWorkQueue
+                            onCaseIdClick={handleQaCaseIdClick}
+                            onProceed={handleQaProceed}
+                            onView={handleQaView}
+                            onManagerCaseIdClick={openCaseFromManagement}
+                    />
+            
+                    ) : effectiveTab === "Final Contention Review" ? (
+                        <FCRWorkQueue
+                            isFcrTab={isFcrTab}
+                            onCaseIdClick={(row) => openFcrCaseFromRow(row, "preview")}
+                            onProceed={handleFcrProceed}
+                    />
+
+            ) : (
+                <Box
+                    sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        mt: "200px",
+                    }}
+                >
+                    <Typography
+                        sx={{
+                            color: wq?.emptyText,
+                            fontSize: 16,
+                            fontWeight: 600,
+                            fontStyle: "italic",
+                        }}
+                    >
+                        Select a queue above to view cases.
+                    </Typography>
+                </Box>
+            )}
+
+        
+            </>
+            )}
+            </Box>
+            <DiagnosticsAdminActionDrawer
+                open={diagnosticsAdminDrawer !== null}
+                type={diagnosticsAdminDrawer ?? "reschedule"}
+                onClose={() => {
+                    setDiagnosticsAdminDrawer(null);
+                    setRescheduleRow(null);
+                }}
+                rescheduleRow={rescheduleRow}
+                isDark={isDark}
+                onRescheduleSave={
+                    handleDiagnosticsAdminRescheduleSave
+                }
+                onUploadErrorSave={
+                    handleDiagnosticsAdminUploadErrorSave
+                }
+            />
+        </Box>
+    );
+};
+
+export default WorkQueues;
+
