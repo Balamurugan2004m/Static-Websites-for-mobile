@@ -1,0 +1,91 @@
+export type JwtPayload = {
+  exp?: number;
+  iat?: number;
+  sub?: string;
+  unique_name?: string;
+  [key: string]: unknown;
+};
+
+export function decodeJwtPayload(token: string): JwtPayload | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) {
+      return null;
+    }
+
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const json = atob(padded);
+    return JSON.parse(json) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
+export function getJwtExpiryMs(token: string): number | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp || !Number.isFinite(payload.exp)) {
+    return null;
+  }
+  return payload.exp * 1000;
+}
+
+export function isJwtExpired(token: string, nowMs: number = Date.now()): boolean {
+  const expiryMs = getJwtExpiryMs(token);
+  if (expiryMs === null) {
+    return true;
+  }
+  return expiryMs <= nowMs;
+}
+
+export function isJwtExpiringWithin(
+  token: string,
+  withinMs: number,
+  nowMs: number = Date.now()
+): boolean {
+  const expiryMs = getJwtExpiryMs(token);
+  if (expiryMs === null) {
+    return true;
+  }
+  return expiryMs - nowMs <= withinMs;
+}
+
+/** MFA / password-change tokens must not call RefreshToken or other session APIs. */
+export function getJwtPurpose(token: string): string | null {
+  const purpose = decodeJwtPayload(token)?.purpose;
+  return typeof purpose === "string" && purpose.trim() ? purpose.trim() : null;
+}
+
+export function isLimitedPurposeJwt(token: string): boolean {
+  const purpose = getJwtPurpose(token);
+  return purpose === "password-change";
+}
+
+export function shouldRefreshJwt(options: {
+  token: string;
+  refreshBeforeMs: number;
+  lastActivityAt: number;
+  sessionTimeoutMs: number;
+  nowMs?: number;
+}): boolean {
+  const nowMs = options.nowMs ?? Date.now();
+
+  if (!options.token) {
+    return false;
+  }
+
+  if (isLimitedPurposeJwt(options.token)) {
+    return false;
+  }
+
+  if (isJwtExpired(options.token, nowMs)) {
+    return false;
+  }
+
+  const idleMs = nowMs - options.lastActivityAt;
+  if (idleMs >= options.sessionTimeoutMs) {
+    return false;
+  }
+
+  return isJwtExpiringWithin(options.token, options.refreshBeforeMs, nowMs);
+}
