@@ -1,0 +1,94 @@
+import axios, { type AxiosError } from "axios";
+import type { ApiClientError, ApiEnvelope } from "@/services/api/types";
+
+export const SYSTEM_ERROR_MESSAGE =
+  "A system error occurred. Please try again later.";
+
+export function isApiClientError(error: unknown): error is ApiClientError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    "status" in error &&
+    typeof (error as ApiClientError).message === "string" &&
+    typeof (error as ApiClientError).status === "number"
+  );
+}
+
+/** Prefer API/client message; fall back to the shared system-error copy. */
+export function getApiErrorMessage(
+  error: unknown,
+  fallback: string = SYSTEM_ERROR_MESSAGE
+): string {
+  if (isApiClientError(error)) {
+    const trimmed = error.message.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string"
+  ) {
+    const trimmed = (error as { message: string }).message.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return fallback;
+}
+
+export function normalizeApiError(
+  error: unknown
+): ApiClientError {
+  if (isApiClientError(error)) {
+    return error;
+  }
+
+  if (axios.isAxiosError(error)) {
+    const axiosErr = error as AxiosError<ApiEnvelope<unknown>>;
+    const status = axiosErr.response?.status ?? 0;
+    const responsePayload = axiosErr.response?.data;
+    const noResponse = !axiosErr.response;
+    const isTimeout =
+      axiosErr.code === "ECONNABORTED" ||
+      /timeout/i.test(axiosErr.message ?? "");
+    const isSystemError =
+      noResponse || isTimeout || status === 0 || status >= 500;
+
+    if (isSystemError) {
+      return {
+        message: SYSTEM_ERROR_MESSAGE,
+        status,
+        errors: responsePayload?.errors,
+        isSystemError: true,
+      };
+    }
+
+    const serverMessage =
+      typeof responsePayload?.message === "string"
+        ? responsePayload.message.trim()
+        : "";
+
+    return {
+      message: serverMessage || SYSTEM_ERROR_MESSAGE,
+      status,
+      errors: responsePayload?.errors,
+      isSystemError: false,
+    };
+  }
+
+  const message =
+    error instanceof Error ? error.message.trim() : "";
+
+  return {
+    message: message || SYSTEM_ERROR_MESSAGE,
+    status: 0,
+    isSystemError: true,
+  };
+}
+

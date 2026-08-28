@@ -1,0 +1,289 @@
+import axios, {
+  AxiosError,
+  AxiosInstance,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from "axios";
+import { normalizeApiError } from "@/services/api/api-error";
+import type { ApiEnvelope } from "@/services/api/types";
+import { logoutDueToExpiredJwt } from "@/lib/auth/logout-expired-jwt";
+import { API_URLS } from "@/constants/api-urls";
+import { decodeJwtPayload } from "@/lib/auth/jwt-utils";
+
+const DEFAULT_TIMEOUT_MS = Number(
+  process.env.NEXT_PUBLIC_API_TIMEOUT_MS ?? "10000"
+);
+
+
+
+const PUBLIC_AUTH_PATHS = new Set([
+  API_URLS.AUTH.LOGIN,
+  API_URLS.AUTH.FORGOT_PASSWORD,
+  API_URLS.AUTH.RESET_PASSWORD,
+  API_URLS.AUTH.CONFIRM_EMAIL,
+  API_URLS.AUTH.TOKEN_VERIFY,
+]);
+
+function getAccessToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const token = window.localStorage.getItem("accessToken");
+    if (!token || token === "null" || token === "undefined") {
+      return null;
+    }
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+function writeAccessTokenCookie(token: string): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const expires = new Date();
+  expires.setDate(expires.getDate() + 7);
+  document.cookie = `accessToken=${token}; Path=/; Expires=${expires.toUTCString()}; SameSite=Lax`;
+}
+
+function getAccessUserId(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  const claim = payload?.["x-access-userid"];
+  if (typeof claim === "number" && Number.isFinite(claim) && claim > 0) {
+    return String(claim);
+  }
+  if (typeof claim === "string" && claim.trim()) {
+    return claim.trim();
+  }
+  return null;
+}
+
+function unwrapResponse<T>(payload: ApiEnvelope<T> | T): T {
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return payload.data;
+  }
+
+  return payload as T;
+}
+
+function resolveApiBaseUrl(baseURL?: string): string | undefined {
+  if (baseURL) {
+    return baseURL.replace(/\/+$/, "");
+  }
+
+  return process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
+}
+
+function isPublicAuthRequest(url?: string): boolean {
+  if (!url) {
+    return false;
+  }
+  return [...PUBLIC_AUTH_PATHS].some((path) => url.includes(path));
+}
+
+const refreshClient = axios.create({
+  baseURL: resolveApiBaseUrl(),
+  timeout: DEFAULT_TIMEOUT_MS,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+let isRefreshing = false;
+
+interface FailedQueuePromise {
+  resolve: (token: string) => void;
+  reject: (error: unknown) => void;
+}
+
+let failedQueue: FailedQueuePromise[] = [];
+
+const processQueue = (
+  error: unknown,
+  token: string | null = null
+) => {
+  failedQueue.forEach((promise) => {
+    if (token) {
+      promise.resolve(token);
+    } else {
+      promise.reject(error);
+    }
+  });
+
+  failedQueue = [];
+};
+
+type RetryableRequestConfig = InternalAxiosRequestConfig & {
+  _retry?: boolean;
+};
+
+class HttpClient {
+  private readonly client: AxiosInstance;
+
+  constructor(baseURL?: string) {
+    this.client = axios.create({
+      baseURL: resolveApiBaseUrl(baseURL),
+      timeout: DEFAULT_TIMEOUT_MS,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    this.setupInterceptors();
+  }
+
+  private setupInterceptors(): void {
+    this.client.interceptors.request.use(
+      (config: InternalAxiosRequestConfig) => {
+        const token = getAccessToken();
+
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+          config.headers["x-access-token"] = token;
+          const userId = getAccessUserId(token);
+          if (userId) {
+            config.headers["x-access-userid"] = userId;
+          }
+        }
+
+        return config;
+      }
+    );
+
+    this.client.interceptors.response.use(
+      (response) => unwrapResponse(response.data),
+
+      async (error: AxiosError<ApiEnvelope<unknown>>) => {
+        const requestConfig = error.config as RetryableRequestConfig | undefined;
+        const status = error.response?.status;
+
+        if (typeof window !== "undefined") {
+          console.error("[api] request failed", {
+            url: error.config?.url,
+            method: error.config?.method,
+            status,
+            data: error.response?.data,
+            message: error.message,
+          });
+        }
+
+        // Access token expired
+        if (
+          status === 401 &&
+          requestConfig &&
+          !requestConfig._retry &&
+          !isPublicAuthRequest(requestConfig.url)
+        ) {
+          const currentToken = getAccessToken();
+
+          if (!currentToken) {
+            logoutDueToExpiredJwt();
+            return Promise.reject(normalizeApiError(error));
+          }
+
+          // Another request is already refreshing the token
+          if (isRefreshing) {
+            return new Promise((resolve, reject) => {
+              failedQueue.push({
+                resolve: (token: string) => {
+                  requestConfig.headers.Authorization = `Bearer ${token}`;
+                  requestConfig.headers["x-access-token"] = token;
+
+                  const userId = getAccessUserId(token);
+                  if (userId) {
+                    requestConfig.headers["x-access-userid"] = userId;
+                  }
+
+                  resolve(this.client(requestConfig));
+                },
+                reject: (err: unknown) => {
+                  reject(normalizeApiError(err));
+                },
+              });
+            });
+          }
+
+          requestConfig._retry = true;
+          isRefreshing = true;
+
+          try {
+            // Use separate client so RefreshToken does not
+            // trigger this same interceptor
+            const refreshResponse = await refreshClient.get(
+              API_URLS.AUTH.REFRESH_TOKEN,
+              {
+                headers: {
+                  Authorization: `Bearer ${currentToken}`,
+                  "x-access-token": currentToken,
+                },
+              }
+            );
+
+            const newToken =
+              refreshResponse.data?.Token ??
+              refreshResponse.data?.data?.Token;
+
+            if (!newToken) {
+              throw new Error("Refresh response did not include a Token");
+            }
+
+            // Save new access token
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem("accessToken", newToken);
+              writeAccessTokenCookie(newToken);
+            }
+
+            // Release queued requests
+            processQueue(null, newToken);
+
+            // Update original request
+            requestConfig.headers.Authorization = `Bearer ${newToken}`;
+            requestConfig.headers["x-access-token"] = newToken;
+
+            const userId = getAccessUserId(newToken);
+            if (userId) {
+              requestConfig.headers["x-access-userid"] = userId;
+            }
+
+            // Retry original request
+            return this.client(requestConfig);
+          } catch (refreshError) {
+            processQueue(refreshError, null);
+            logoutDueToExpiredJwt();
+
+            return Promise.reject(normalizeApiError(refreshError));
+          } finally {
+            isRefreshing = false;
+          }
+        }
+
+        return Promise.reject(normalizeApiError(error));
+      }
+    );
+  }
+
+  get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.client.get<T, T>(url, config);
+  }
+
+  post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return this.client.post<T, T>(url, data, config);
+  }
+
+  put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return this.client.put<T, T>(url, data, config);
+  }
+
+  patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return this.client.patch<T, T>(url, data, config);
+  }
+
+  delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return this.client.delete<T, T>(url, config);
+  }
+}
+
+export const httpClient = new HttpClient();
