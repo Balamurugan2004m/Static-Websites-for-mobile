@@ -1,0 +1,23 @@
+import { clearAuthSession } from "@/lib/auth/logout";
+import {
+  getSessionExpiredLoginPath,
+  SESSION_EXPIRED_STORAGE_KEY,
+} from "@/lib/auth/session-expired";
+import { isAuthPublicPath } from "@/lib/auth/auth-public-paths";
+
+/** Clear auth and send the user to login with the session-expired message. */
+export function logoutDueToExpiredJwt(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const path = window.location.pathname.toLowerCase();
+  if (isAuthPublicPath(path)) {
+    return;
+  }
+
+  sessionStorage.setItem(SESSION_EXPIRED_STORAGE_KEY, "true");
+  sessionStorage.removeItem("manualLogout");
+  clearAuthSession();
+  window.location.replace(getSessionExpiredLoginPath());
+}
