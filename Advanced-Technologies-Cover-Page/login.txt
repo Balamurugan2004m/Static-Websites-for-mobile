@@ -1,0 +1,683 @@
+"use client";
+ 
+import { useState, useEffect, useRef, type SubmitEventHandler } from "react";
+import { useRouter, useSearchParams} from "next/navigation";
+import {
+  Box,
+  Typography,
+  Checkbox,
+  FormControlLabel,
+  CircularProgress,
+} from "@mui/material";
+import { AuthBackdrop } from "@/components/auth/auth-backdrop";
+import {
+  AuthCard,
+  AuthCardBody,
+  AuthCardFooter,
+  AuthCardHeader,
+  AuthSupportLinks,
+} from "@/components/auth/auth-card";
+import { PasswordField, UsernameField } from "@/components/auth/auth-field";
+import { PrimaryButton } from "@/components/ui/primary-button";
+import { themeTokens } from "@/theme/tokens";
+import { TermsModal } from "@/components/legal/terms-modal";
+import Image from "next/image";
+import { Suspense } from "react";
+import { useToastContext } from "@/context/toast-context";
+import { login } from "@/services/auth";
+import { getApiErrorMessage } from "@/services/api/api-error";
+import { useAuth } from "@/hooks/useAuth";
+import { AuthStatus } from "@/constants/auth-status";
+import {
+  getSsoBridgePath,
+  getStoredSsoRequestId,
+  storeSsoRequestId,
+} from "@/lib/sso/sso-request";
+import { resolveDisplayName } from "@/lib/auth/display-name";
+import {
+  SESSION_EXPIRED_MESSAGE,
+  SESSION_EXPIRED_QUERY,
+  SESSION_EXPIRED_STORAGE_KEY,
+} from "@/lib/auth/session-expired";
+import { markAuthVerified } from "@/context/auth-context";
+ 
+const { colors, typography, shadow } = themeTokens;
+ 
+const supportLinks = [
+  { label: "How to use?", href: "/how-to-use", target: "_blank", },
+  { label: "Forgot password?", href: "/reset-password" },
+];
+ 
+function LoginPageContent()  {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const {
+    showPasswordSuccess,
+    setShowPasswordSuccess,
+    passwordSuccessType,
+    setPasswordSuccessType,
+  } = useToastContext();
+ 
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isSessionTimeout, setIsSessionTimeout] = useState(false);
+  const [errorField, setErrorField] = useState<
+    "username" | "password" | "both" | null
+  >(null);
+  const [openTermsModal, setOpenTermsModal] = useState(false);
+  const {
+    setLoginUserName,
+    setAuthUsername,
+    setAuthSessionId,
+    setAuthAccessToken,
+    setAuthUserId,
+    setEmail,
+    setPhone,
+    setFullName,
+  } = useAuth();
+
+  const [showDisabledAccount, setShowDisabledAccount] = useState(false);
+  /** Local submit flag — avoid AuthContext loading, which re-renders the whole tree. */
+  const [submitting, setSubmitting] = useState(false);
+  /** Once set for this visit, keep timeout banner stable (no tear-down on first click). */
+  const sessionTimeoutShownRef = useRef(false);
+
+  const expires = new Date();
+  expires.setDate(expires.getDate() + 7);
+
+  useEffect(() => {
+    const ssoRequestId = searchParams.get("ssoRequestId");
+    if (ssoRequestId) {
+      storeSsoRequestId(ssoRequestId);
+    }
+  }, [searchParams]);
+ 
+  useEffect(() => {
+    if (showPasswordSuccess) {
+      setShowSuccessToast(true);
+  
+      const timer = setTimeout(() => {
+        setShowSuccessToast(false);
+        setShowPasswordSuccess(false);
+        setPasswordSuccessType(null);
+      }, 5000);
+  
+      return () => clearTimeout(timer);
+    }
+  }, [showPasswordSuccess, setShowPasswordSuccess, setPasswordSuccessType]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    // Already applying session timeout for this visit — keep banner stable.
+    if (sessionTimeoutShownRef.current) {
+      return;
+    }
+
+    const reason = searchParams.get("reason");
+    const manualLogout =
+      sessionStorage.getItem("manualLogout") === "true";
+    const sessionExpired =
+      reason === SESSION_EXPIRED_QUERY ||
+      sessionStorage.getItem(SESSION_EXPIRED_STORAGE_KEY) === "true";
+
+    if (manualLogout) {
+      sessionStorage.removeItem("manualLogout");
+      sessionStorage.removeItem(SESSION_EXPIRED_STORAGE_KEY);
+      return;
+    }
+
+    if (!sessionExpired) {
+      return;
+    }
+
+    sessionTimeoutShownRef.current = true;
+    setIsSessionTimeout(true);
+    setLoginError(SESSION_EXPIRED_MESSAGE);
+    setErrorField(null);
+  }, [searchParams]);
+
+  const clearSessionExpiredMarkers = () => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    sessionStorage.removeItem(SESSION_EXPIRED_STORAGE_KEY);
+  };
+ 
+  const handleSubmit: SubmitEventHandler<HTMLFormElement> = async (event) => {
+    event.preventDefault();
+    if (submitting) {
+      return;
+    }
+
+    // Prefer controlled state; fall back to native values when autofill didn't fire onChange.
+    const form = event.currentTarget;
+    const usernameInput = form.elements.namedItem("username");
+    const passwordInput = form.elements.namedItem("password");
+    const domUsername =
+      usernameInput instanceof HTMLInputElement ? usernameInput.value.trim() : "";
+    const domPassword =
+      passwordInput instanceof HTMLInputElement ? passwordInput.value.trim() : "";
+
+    const enteredUsername = username.trim() || domUsername;
+    const enteredPassword = password.trim() || domPassword;
+
+    if (enteredUsername && enteredUsername !== username) {
+      setUsername(enteredUsername);
+    }
+    if (enteredPassword && enteredPassword !== password) {
+      setPassword(enteredPassword);
+    }
+ 
+    if (!enteredUsername && !enteredPassword) {
+      setIsSessionTimeout(false);
+      setLoginError("Please enter your username and password.");
+      setErrorField("both");
+      return;
+    }
+ 
+    if (!enteredUsername) {
+      setIsSessionTimeout(false);
+      setLoginError("Please enter your username.");
+      setErrorField("username");
+      return;
+    }
+ 
+    if (!enteredPassword) {
+      setIsSessionTimeout(false);
+      setLoginError("Please enter your password.");
+      setErrorField("password");
+      return;
+    }
+
+    // Keep session-timeout banner mounted until login succeeds (avoids click-time re-layout).
+    setSubmitting(true);
+    
+    try {
+  const response = await login({
+    UserName: enteredUsername,
+    Password: enteredPassword,
+    RememberMe: true,
+    DeviceId: "",
+  });
+
+  if (response.Status === AuthStatus.UserDisabled) {
+    setShowDisabledAccount(true);
+    return;
+  }
+
+  if (
+    response.Status === AuthStatus.Failed ||
+    response.Status === AuthStatus.LockedOut ||
+    response.Status === AuthStatus.EmailNotConfirmed
+  ) {
+    setIsSessionTimeout(false);
+    setLoginError(
+      response.Status === AuthStatus.LockedOut
+        ? "Your account is locked. Please try again later."
+        : response.Status === AuthStatus.EmailNotConfirmed
+          ? "Please confirm your email before signing in."
+          : "Invalid username and password. Please try again!",
+    );
+    setErrorField("both");
+    return;
+  }
+
+  setAuthUsername(response.UserName);
+  setLoginUserName(response.UserName);
+  setAuthSessionId(response.SessionId);
+  setEmail(response.Email ?? "");
+  setPhone(response.PhoneNumber ?? "");
+  setFullName(resolveDisplayName(response));
+  document.cookie = `accessToken=${response.Token}; Path=/; Expires=${expires.toUTCString()}; SameSite=Lax`;
+  setLoginError("");
+  setIsSessionTimeout(false);
+  setErrorField(null);
+  clearSessionExpiredMarkers();
+
+  if (response.Status === AuthStatus.Success) {
+    const parsedUserId = response.Id ? Number(response.Id) : 0;
+    setAuthUserId?.(parsedUserId);
+
+    if (response.Token) {
+      setAuthAccessToken(response.Token);
+      localStorage.setItem("accessToken", response.Token);
+    }
+
+    // Status = 0: user is fully authenticated (admin / direct login).
+    // This is the ONLY place markAuthVerified is called for the login flow.
+    markAuthVerified();
+
+    const pendingSsoRequestId =
+      searchParams.get("ssoRequestId") ?? getStoredSsoRequestId();
+    if (pendingSsoRequestId) {
+      router.push(getSsoBridgePath(pendingSsoRequestId));
+      return;
+    }
+
+    router.push("/home");
+    return;
+  }
+
+  if (response.Status === AuthStatus.RequiresTwoFactor) {
+  if (response.Token) {
+    setAuthAccessToken(response.Token);
+    localStorage.setItem("accessToken", response.Token);
+    document.cookie = `accessToken=${response.Token}; Path=/; Expires=${expires.toUTCString()}; SameSite=Lax`;
+  }
+
+  router.push("/onetime-password");
+  return;
+  }
+
+  if (response.Status === AuthStatus.PasswordExpired) {
+    if (response.Token) {
+      setAuthAccessToken(response.Token);
+      localStorage.setItem("accessToken", response.Token);
+      document.cookie = `accessToken=${response.Token}; Path=/; Expires=${expires.toUTCString()}; SameSite=Lax`;
+    }
+    router.push("/force-set-password");
+    return;
+  }
+} catch (error) {
+  console.error(error);
+
+  setIsSessionTimeout(false);
+  setLoginError(getApiErrorMessage(error));
+  setErrorField("both");
+} finally {
+  setSubmitting(false);
+}
+    
+  }
+ 
+  return (
+    <AuthBackdrop>
+  {showSuccessToast && (
+  <Box
+    sx={{
+      position: "fixed",
+      top: "20px",
+      right: "27px",
+      width: "350px",
+      height: "70px",
+      background: colors.feedback.toastSurface,
+      boxShadow: shadow.successToast,
+      borderRadius: "4px",
+      zIndex: 9999,
+      overflow: "hidden",
+    }}
+  >
+    {/* Left Green Border */}
+    <Box
+      sx={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: "3px",
+        height: "70px",
+        backgroundColor: colors.feedback.successMain,
+      }}
+    />
+
+    {/* Success Icon */}
+    <Box
+      sx={{
+        position: "absolute",
+        left: "14px",
+        top: "12px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Image
+        src="/icons/CheckCircleOutlined.svg"
+        alt="Success"
+        width={18}
+        height={18}
+      />
+    </Box>
+
+    {/* Content */}
+    <Box
+      sx={{
+        position: "absolute",
+        left: "42px",
+        top: "10px",
+        right: "28px",
+      }}
+    >
+     <Typography
+  sx={{
+    fontSize: "12px",
+    fontWeight: 600,
+    lineHeight: "16px",
+    letterSpacing: "0.15px",
+    color: colors.text.successDark,
+    fontFamily: typography.fontFamily,
+  }}
+>
+{passwordSuccessType === "expired"
+    ? "Password Has Been Reset Successfully!"
+    : "Password Has Been Set Successfully!"}
+</Typography>
+
+<Typography
+  sx={{
+    mt: "2px",
+    fontSize: "11px",
+    fontWeight: 400,
+    lineHeight: "14px",
+    letterSpacing: "0.15px",
+    color: colors.text.successDark,
+    fontFamily: typography.fontFamily,
+  }}
+> 
+{passwordSuccessType === "expired"
+    ? "Your password has been successfully reset. You can now sign in to your account."
+    : "Your password has been successfully created. You can now sign in to your account."}
+</Typography>
+    </Box>
+
+    {/* Close Icon */}
+    <Box
+      onClick={() => {
+        setShowSuccessToast(false);
+        setShowPasswordSuccess(false);
+        setPasswordSuccessType(null);
+      }}
+      sx={{
+        position: "absolute",
+        right: "10px",
+        top: "10px",
+        width: "16px",
+        height: "16px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        color: colors.text.iconPrimary,
+        fontSize: "16px",
+        fontWeight: 400,
+        lineHeight: 1,
+      }}
+    >
+      ×
+    </Box>
+  </Box>
+)}
+      <AuthCard>
+        <AuthCardHeader />
+        <AuthCardBody asForm onSubmit={handleSubmit}>
+          {showDisabledAccount && (
+              <Box
+                sx={{
+                  width: "100%",
+                  borderRadius: "10px",
+                  border: `0.67px solid ${colors.border.notificationError}`,
+                  backgroundColor: colors.background.notificationError,
+                  px: "16px",
+                  py: "12px",
+                  display: "flex",
+                  gap: "8px",
+                  alignItems: "flex-start",
+                  mb: 2,
+                }}
+              >
+                <Image
+                  src="/icons/warning-icon.svg"
+                  alt="Warning"
+                  width={20}
+                  height={20}
+                />
+
+                <Typography
+                  sx={{
+                    fontSize: "14px",
+                    lineHeight: "20px",
+                    fontFamily: typography.fontFamily,
+                    color: colors.border.dark,
+                  }}
+                >
+                  Account disabled! If you need further assistance, please contact (833) 832-7077, 6:00am - 12:00am, Central Time, Monday through Saturday.
+                </Typography>
+              </Box>
+            )}
+          {loginError && (
+            <Box
+              sx={{
+                width: "100%",
+                minWidth: "260px",
+                minHeight: "44.33px",
+                borderRadius: "10px",
+                border: `0.67px solid ${colors.border.notificationError}`,
+                backgroundColor: colors.background.notificationError,
+ 
+                px: "16px",
+                py: "12px",
+ 
+                display: "flex",
+                alignItems: isSessionTimeout ? "center" : "flex-start",
+                gap: "8px",
+ 
+                alignSelf: "center",
+              }}
+            >
+              <Image
+                src="/icons/warning-icon.svg"
+                alt="Warning"
+                width={20}
+                height={20}
+              />
+              <Typography
+                variant="body2"
+                sx={{
+                  color: isSessionTimeout
+                    ? colors.text.dangerDark
+                    : colors.text.alertError,
+                   fontSize: "14px",
+                  fontFamily: typography.fontFamily,
+                  fontWeight: 400,
+                  lineHeight: "20px",
+                  letterSpacing: "0px",
+                }}
+              >
+                {loginError}
+              </Typography>
+            </Box>
+          )}
+          <Typography
+            variant="h2"
+            sx={{
+              color: colors.text.primary,
+              fontFamily: typography.fontFamily,
+              fontStyle: "normal",
+              fontWeight: 400,
+            }}
+          >
+            Welcome
+          </Typography>
+ 
+          <UsernameField
+            value={username}
+            onChange={(value) => {
+              setUsername(value);
+              setShowDisabledAccount(false);
+              // Clear only field/validation errors — keep session-timeout banner stable.
+              if (!isSessionTimeout && loginError) {
+                setLoginError("");
+              }
+              if (errorField === "username" || errorField === "both") {
+                if (!isSessionTimeout) {
+                  setLoginError("");
+                }
+                setErrorField(null);
+              }
+            }}
+            error={
+              errorField === "username" || errorField === "both" ? "error" : ""
+            }
+            helperText={
+              loginError === "Please enter your username." ||
+              loginError === "Please enter your username and password."
+                ? "*Required field"
+                : ""
+            }
+            showErrorIcon={errorField === "username" || errorField === "both"}
+            inputSx={{
+              "& .MuiOutlinedInput-root.Mui-error .MuiOutlinedInput-notchedOutline":
+                {
+                  border: `1px solid  ${colors.text.dangerDark}`,
+                  boxShadow: shadow.inputError,
+                },
+              "& .MuiOutlinedInput-root.Mui-error.Mui-focused .MuiOutlinedInput-notchedOutline":
+                {
+                  border: `1px solid  ${colors.text.dangerDark}`,
+                  boxShadow: shadow.inputError,
+                },
+            }}
+          />
+          <PasswordField
+            value={password}
+            onChange={(value) => {
+              setPassword(value);
+              setShowDisabledAccount(false);
+              if (!isSessionTimeout && loginError) {
+                setLoginError("");
+              }
+              if (errorField === "password" || errorField === "both") {
+                if (!isSessionTimeout) {
+                  setLoginError("");
+                }
+                setErrorField(null);
+              }
+            }}
+            visible={passwordVisible}
+            onToggleVisible={() => setPasswordVisible((current) => !current)}
+            error={
+              errorField === "password" || errorField === "both" ? "error" : ""
+            }
+            helperText={
+              loginError === "Please enter your password." ||
+              loginError === "Please enter your username and password."
+                ? "*Required field"
+                : ""
+            }
+            showErrorIcon={errorField === "password" || errorField === "both"}
+            ariaLabelShow="Show password"
+            ariaLabelHide="Hide password"
+            inputSx={{
+              "& .MuiOutlinedInput-root.Mui-error .MuiOutlinedInput-notchedOutline":
+                {
+                  border: `1px solid  ${colors.text.dangerDark}`,
+                  boxShadow: shadow.inputError,
+                },
+              "& .MuiOutlinedInput-root.Mui-error.Mui-focused .MuiOutlinedInput-notchedOutline":
+                {
+                  border: `1px solid  ${colors.text.dangerDark}`,
+                  boxShadow: shadow.inputError,
+                },
+            }}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked
+                disabled
+                size="small"
+                sx={{
+                  color: colors.action.secondaryText,
+                  "&.Mui-checked": {
+                    color: colors.action.secondaryText,
+                  },
+                  "&.Mui-disabled": {
+                    color: colors.action.secondaryText,
+                  },
+                  "&.Mui-checked.Mui-disabled": {
+                    color: colors.action.secondaryText,
+                  },
+                }}
+              />
+            }
+            label={
+              <Typography
+                onClick={() => setOpenTermsModal(true)}
+                sx={{
+                  color: colors.text.primary,
+                  fontSize: "12px",
+                  textDecoration: "underline",
+                  textUnderlineOffset: "2px",
+                  fontFamily: typography.fontFamily,
+                }}
+              >
+                Terms & Conditions
+              </Typography>
+            }
+            sx={{
+              ml: 0,
+              alignItems: "center",
+            }}
+          />
+ 
+          <PrimaryButton
+            type="submit"
+            fullWidth
+            disabled={showDisabledAccount || submitting}
+            sx={{
+              mt: 0.75,
+              "&.Mui-disabled": {
+                backgroundColor: submitting
+                  ? colors.brand.secondary
+                  : colors.background.darkIconSurface,
+                color: colors.background.app,
+                opacity: 1,
+              },
+            }}
+          >
+            {submitting ? (
+              <CircularProgress
+                size={18}
+                thickness={4}
+                sx={{ color: "#fff", mr: 1 }}
+              />
+            ) : null}
+            <Typography
+              sx={{
+                fontWeight: 400,
+                fontSize: "14px",
+                fontFamily: typography.fontFamily,
+                letterSpacing: "0%",
+              }}
+            >
+              Login
+            </Typography>
+          </PrimaryButton>
+ 
+          <AuthSupportLinks links={supportLinks} />
+        </AuthCardBody>
+        <AuthCardFooter />
+      </AuthCard>
+      <TermsModal
+        open={openTermsModal}
+        onClose={() => setOpenTermsModal(false)}
+        onAccept={() => {
+          setOpenTermsModal(false);
+        }}
+      />
+    </AuthBackdrop>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}

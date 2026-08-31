@@ -1,0 +1,287 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { clearAuthSession } from "@/lib/auth/logout";
+import {
+  DISPLAY_NAME_STORAGE_KEY,
+  USER_EMAIL_STORAGE_KEY,
+} from "@/lib/auth/display-name";
+
+const OTP_METHOD_STORAGE_KEY = "otpMethod";
+
+/**
+ * The cookie that signals full authentication (API Status = 0).
+ * Must match the constant in proxy.ts exactly.
+ * A valid accessToken alone does NOT unlock protected routes — this must also be present.
+ */
+const AUTH_VERIFIED_COOKIE = "authVerified";
+
+/**
+ * Call this ONLY when the login or OTP API returns Status = 0.
+ * Writes a 7-day persistent cookie so the proxy allows access to protected routes.
+ *
+ * Called in exactly two places:
+ *   - login/page.tsx  → direct admin login (Status = 0)
+ *   - otp-verification/page.tsx → successful OTP completion (Status = 0)
+ */
+export function markAuthVerified(): void {
+  if (typeof document === "undefined") return;
+  const expires = new Date();
+  expires.setDate(expires.getDate() + 7);
+  document.cookie = `${AUTH_VERIFIED_COOKIE}=true; Path=/; Expires=${expires.toUTCString()}; SameSite=Lax`;
+}
+
+export type AuthContextType = {
+  email: string;
+  phone: string;
+  username: string;
+  fullName: string;
+  sessionId: string;
+  accessToken: string;
+  userId?: number;
+  loading: boolean;
+  otpMethod: "email" | "phone" | "";
+  otpDestination: string;
+  loginUserName: string;
+  setLoginUserName: (userName: string) => void;
+  setVeteranName: (name: string) => void;
+  setOtpDestination: (destination: string) => void;
+  setOtpMethod: (method: "email" | "phone" | "") => void;
+  setEmail: (email: string) => void;
+  setPhone: (phone: string) => void;
+  setFullName: (fullName: string) => void;
+  setAuthUsername: (username: string) => void;
+  setAuthSessionId: (sessionId: string) => void;
+  setAuthAccessToken: (token: string) => void;
+  setAuthUserId: (userId: number) => void;
+  setLoading: (loading: boolean) => void;
+  clearAuth: () => void;
+};
+
+export const AuthContext = createContext<AuthContextType | undefined>(
+  undefined
+);
+
+const AUTH_STORAGE_KEYS = {
+  EMAIL: "authEmail",
+  PHONE: "authPhone",
+  USERNAME: "authUsername",
+  SESSION_ID: "authSessionId",
+  ACCESS_TOKEN: "accessToken",
+  OTP_METHOD: "authOtpMethod",
+  OTP_DESTINATION: "authOtpDestination",
+  LOGIN_USERNAME: "authLoginUserName",
+  VETERAN_NAME: "authVeteranName",
+} as const;
+
+function readStored(key: string): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(key) ?? "";
+}
+
+function writeStored(key: string, value: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (value) {
+    window.localStorage.setItem(key, value);
+  } else {
+    window.localStorage.removeItem(key);
+  }
+}
+
+function readCookieToken(): string {
+  if (typeof document === "undefined") {
+    return "";
+  }
+  return (
+    document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("accessToken="))
+      ?.slice("accessToken=".length) ?? ""
+  );
+}
+
+type StoredAuthSnapshot = {
+  email: string;
+  phone: string;
+  username: string;
+  fullName: string;
+  sessionId: string;
+  accessToken: string;
+  otpMethod: "email" | "phone" | "";
+};
+
+function readStoredAuthSnapshot(): StoredAuthSnapshot {
+  const token = readStored("accessToken") || readCookieToken();
+  if (token && !readStored("accessToken")) {
+    writeStored("accessToken", token);
+  }
+  if (token) {
+    window.localStorage.removeItem("sessionLogoutAt");
+    if (!window.localStorage.getItem("sessionLastActivityAt")) {
+      window.localStorage.setItem("sessionLastActivityAt", String(Date.now()));
+    }
+  }
+
+  return {
+    email: readStored(USER_EMAIL_STORAGE_KEY),
+    phone: readStored("userPhone"),
+    username: readStored(AUTH_STORAGE_KEYS.USERNAME),
+    fullName: readStored(DISPLAY_NAME_STORAGE_KEY),
+    sessionId: readStored("loginSessionId"),
+    accessToken: token,
+    otpMethod: readStored(OTP_METHOD_STORAGE_KEY) as
+      | "email"
+      | "phone"
+      | "",
+  };
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [email, setEmailState] = useState("");
+  const [phone, setPhoneState] = useState("");
+  const [username, setUsername] = useState("");
+  const [fullName, setFullNameState] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [userId, setUserId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [otpMethod, setOtpMethod] = useState<"email" | "phone" | "">(() => {
+  if (typeof window === "undefined") return "";
+     return readStoredAuthSnapshot().otpMethod;
+  });
+  const [otpDestination, setOtpDestination] = useState("");
+  const [loginUserName, setLoginUserNameState] = useState("");
+  const [, setVeteranName] = useState(() =>
+    readStored(AUTH_STORAGE_KEYS.VETERAN_NAME)
+  );
+
+  useEffect(() => {
+    const snapshot = readStoredAuthSnapshot();
+    // Defer so hydration is not a synchronous setState inside the effect body.
+    const timer = window.setTimeout(() => {
+      setFullNameState(snapshot.fullName);
+      setEmailState(snapshot.email);
+      setPhoneState(snapshot.phone);
+      setSessionId(snapshot.sessionId);
+      if (snapshot.username) {
+        setUsername(snapshot.username);
+      }
+      const storedLoginUserName = readStored(AUTH_STORAGE_KEYS.LOGIN_USERNAME);
+      if (storedLoginUserName) {
+        setLoginUserNameState(storedLoginUserName);
+      }
+      if (snapshot.accessToken) {
+        setAccessToken(snapshot.accessToken);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    writeStored(OTP_METHOD_STORAGE_KEY, otpMethod);
+  }, [otpMethod]);
+
+  const setFullName = (value: string) => {
+    setFullNameState(value);
+    writeStored(DISPLAY_NAME_STORAGE_KEY, value);
+  };
+
+  const setEmail = (value: string) => {
+    setEmailState(value);
+    writeStored(USER_EMAIL_STORAGE_KEY, value);
+  };
+
+  const setPhone = (value: string) => {
+    setPhoneState(value);
+    writeStored("userPhone", value);
+  };
+
+  const setAuthUsername = (value: string) => {
+    setUsername(value);
+    writeStored(AUTH_STORAGE_KEYS.USERNAME, value);
+  };
+
+  const setLoginUserName = (value: string) => {
+    setLoginUserNameState(value);
+    writeStored(AUTH_STORAGE_KEYS.LOGIN_USERNAME, value);
+  };
+
+  const setAuthSessionId = (value: string) => {
+    setSessionId(value);
+    writeStored("loginSessionId", value);
+  };
+
+  const setAuthAccessToken = (value: string) => {
+    setAccessToken(value);
+    writeStored("accessToken", value);
+    // Seed idle clock only on first token (e.g. login). JWT refresh must not
+    // reset activity or the 15-minute idle timeout never fires.
+    if (
+      value &&
+      typeof window !== "undefined" &&
+      !window.localStorage.getItem("sessionLastActivityAt")
+    ) {
+      window.localStorage.setItem("sessionLastActivityAt", String(Date.now()));
+    }
+  };
+
+  const clearAuth = useCallback(() => {
+    setEmail("");
+    setPhone("");
+    setUsername("");
+    setFullName("");
+    setSessionId("");
+    setAccessToken("");
+    setUserId(null);
+    setLoading(false);
+    setOtpMethod("");
+    setOtpDestination("");
+    setLoginUserName("");
+    setVeteranName("");
+    clearAuthSession();
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        email,
+        phone,
+        username,
+        fullName,
+        loginUserName,
+        sessionId,
+        accessToken,
+        userId: userId ?? undefined,
+        loading,
+        otpMethod,
+        otpDestination,
+        setOtpDestination,
+        setOtpMethod,
+        setLoginUserName,
+        setVeteranName,
+        setAuthUsername,
+        setAuthSessionId,
+        setAuthAccessToken,
+        setAuthUserId: setUserId,
+        setLoading,
+        setEmail,
+        setPhone,
+        setFullName,
+        clearAuth,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}

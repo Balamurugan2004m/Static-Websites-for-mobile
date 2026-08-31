@@ -1,0 +1,44 @@
+import { clearSsoRequestId } from "@/lib/sso/sso-request";
+import {
+  DISPLAY_NAME_STORAGE_KEY,
+  USER_EMAIL_STORAGE_KEY,
+} from "@/lib/auth/display-name";
+
+/**
+ * Must match the constant in proxy.ts exactly.
+ * Only the clearing side lives here — markAuthVerified() lives in auth-context.tsx.
+ */
+const AUTH_VERIFIED_COOKIE = "authVerified";
+
+
+/**
+ * Expires the authVerified cookie immediately.
+ * Called by clearAuthSession() — covers every logout path automatically.
+ */
+function clearAuthVerified(): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${AUTH_VERIFIED_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
+
+/** Remove persisted VP auth + in-flight SSO state from browser storage. */
+export function clearAuthSession(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem("accessToken");
+  localStorage.removeItem("loginSessionId");
+  localStorage.removeItem("sessionLastActivityAt");
+  localStorage.removeItem("sessionStayLoggedInAt");
+  localStorage.removeItem("sessionLogoutAt");
+  localStorage.removeItem("otpMethod");
+  localStorage.removeItem("userPhone");
+  localStorage.removeItem(DISPLAY_NAME_STORAGE_KEY);
+  localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
+  localStorage.removeItem("authUsername");
+  localStorage.removeItem("authLoginUserName");
+  document.cookie = "accessToken=; Path=/; Max-Age=0; SameSite=Lax";
+  clearAuthVerified();
+  clearSsoRequestId();
+}
+

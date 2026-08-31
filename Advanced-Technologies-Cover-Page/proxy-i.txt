@@ -1,0 +1,198 @@
+import { NextRequest, NextResponse } from "next/server";
+
+const AUTH_COOKIE = "accessToken";
+const NOTICE_COOKIE = "noticeAccepted";
+/** Short-lived pass after accepting notice for email deep links. */
+const NOTICE_GATE_PASS_COOKIE = "noticeGatePass";
+/**
+ * Written exclusively when the login or OTP API returns Status = 0.
+ * A valid accessToken alone does NOT grant access to protected routes —
+ * this cookie must also be present. This is the server-side enforcement
+ * of the "Status 0 = fully authenticated" principle.
+ */
+const AUTH_VERIFIED_COOKIE = "authVerified";
+
+const PUBLIC_PATHS = [
+  "/",
+  "/login",
+  "/about-us",
+  "/how-to-use",
+  "/privacy-policy",
+  "/terms-of-service",
+  "/forgot-password",
+  "/account/resetpassword",
+  "/account/ResetPassword",
+  "/account/confirmemail",
+  "/account/ConfirmEmail",
+  "/check-email",
+  "/reset-password",
+  "/notice",
+  "/welcome-registration",
+  "/welcome-registration/set-password",
+  "/api/auth",
+  "/link-expired",
+  "/force-set-password",
+  "/sso-bridge",
+];
+
+/**
+ * Paths that are part of the OTP / two-factor flow.
+ * They must NOT be publicly accessible. They are only reachable when the
+ * user has a token (login returned Status = 2 / RequiresTwoFactor) but has
+ * NOT yet completed OTP verification (authVerified cookie is absent).
+ * Fully-authenticated users are redirected away from these paths.
+ */
+const OTP_PATHS = [
+  "/onetime-password",
+  "/request-otp",
+  "/otp-verification",
+];
+
+/**
+ * Email / deep links must always go through Notice first (even if notice was
+ * previously accepted), unless the short-lived noticeGatePass cookie is set.
+ *
+ * /login is intentionally excluded: after Accept, sign-out and session timeout
+ * must reach the login page (including ?reason=session-expired) without forcing
+ * the legal notice again. Unauthenticated login still requires noticeAccepted
+ * once via the general gate below.
+ */
+const NOTICE_REQUIRED_PATHS = [
+  "/account/confirmemail",
+  "/account/ConfirmEmail",
+  "/account/resetpassword",
+  "/account/ResetPassword",
+  "/welcome-registration/set-password",
+  "/link-expired",
+  "/forgot-password",
+  "/reset-password",
+  "/check-email",
+];
+
+function isPublicPath(pathname: string): boolean {
+  const normalized = pathname.toLowerCase();
+  return PUBLIC_PATHS.some((path) => {
+    const publicPath = path.toLowerCase();
+    return normalized === publicPath || normalized.startsWith(`${publicPath}/`);
+  });
+}
+
+function isOtpPath(pathname: string): boolean {
+  const normalized = pathname.toLowerCase();
+  return OTP_PATHS.some((path) => {
+    const otpPath = path.toLowerCase();
+    return normalized === otpPath || normalized.startsWith(`${otpPath}/`);
+  });
+}
+
+function requiresNoticeGate(pathname: string): boolean {
+  const normalized = pathname.toLowerCase();
+  return NOTICE_REQUIRED_PATHS.some(
+    (path) => normalized === path || normalized.startsWith(`${path}/`)
+  );
+}
+
+/** Same-origin API proxies (Next rewrites) must never hit the notice/login gate. */
+function isBackendApiPath(pathname: string): boolean {
+  const normalized = pathname.toLowerCase();
+  return (
+    normalized === "/vet-account" ||
+    normalized.startsWith("/vet-account/") ||
+    normalized === "/vet-veteran" ||
+    normalized.startsWith("/vet-veteran/") ||
+    normalized === "/vet-scheduler" ||
+    normalized.startsWith("/vet-scheduler/") ||
+    normalized === "/fs-api" ||
+    normalized.startsWith("/fs-api/")
+  );
+}
+
+function redirectToNotice(req: NextRequest, pathname: string, search: string) {
+  const noticeUrl = req.nextUrl.clone();
+  noticeUrl.pathname = "/notice";
+  noticeUrl.search = "";
+  const redirectTarget = `${pathname}${search}`;
+  if (redirectTarget && redirectTarget !== "/" && redirectTarget !== "/notice") {
+    noticeUrl.searchParams.set("redirect", redirectTarget);
+  }
+  return NextResponse.redirect(noticeUrl);
+}
+
+export function proxy(req: NextRequest) {
+  const { pathname, search } = req.nextUrl;
+  const token = req.cookies.get(AUTH_COOKIE)?.value;
+  const noticeAccepted = req.cookies.get(NOTICE_COOKIE)?.value === "1";
+  const noticeGatePass = req.cookies.get(NOTICE_GATE_PASS_COOKIE)?.value === "1";
+
+  // Proxied BFF paths — pass through so next.config rewrites can reach local services.
+  if (isBackendApiPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  // Notice page is always reachable so the user can accept.
+  if (pathname === "/notice" || pathname.startsWith("/notice/")) {
+    return NextResponse.next();
+  }
+
+  // A token exists — but that alone is NOT sufficient for protected routes.
+  // The user must have completed a full Status = 0 authentication:
+  //   - Direct admin login  → login API returned Status = 0
+  //   - OTP flow users      → OTP verification API returned Status = 0
+  // In both cases markAuthVerified() was called, writing the authVerified cookie.
+  // Without it (e.g. after login returned Status = 2 / RequiresTwoFactor but OTP
+  // was not yet completed), the user is redirected back to login.
+  if (token) {
+    const authVerified = req.cookies.get(AUTH_VERIFIED_COOKIE)?.value === "true";
+
+    if (!authVerified) {
+      // Status 2 state: login succeeded but OTP not yet completed.
+      // Only OTP-flow paths are reachable in this state.
+      if (isOtpPath(pathname)) {
+        return NextResponse.next();
+      }
+      // Everything else (including protected app pages) requires full auth.
+      if (!isPublicPath(pathname)) {
+        const loginUrl = req.nextUrl.clone();
+        loginUrl.pathname = "/login";
+        loginUrl.search = "";
+        return NextResponse.redirect(loginUrl);
+      }
+      return NextResponse.next();
+    }
+
+    // Fully authenticated: OTP paths are no longer relevant — redirect home.
+    if (isOtpPath(pathname)) {
+      const homeUrl = req.nextUrl.clone();
+      homeUrl.pathname = "/home";
+      homeUrl.search = "";
+      return NextResponse.redirect(homeUrl);
+    }
+
+    return NextResponse.next();
+  }
+
+  // Email/deep links always show Notice first (even if previously accepted),
+  // unless the user just accepted and received a short-lived gate pass.
+  if (requiresNoticeGate(pathname) && !noticeGatePass) {
+    return redirectToNotice(req, pathname, search);
+  }
+
+  // Other unauthenticated pages still require notice acceptance once.
+  if (!noticeAccepted) {
+    return redirectToNotice(req, pathname, search);
+  }
+
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  const loginUrl = req.nextUrl.clone();
+  loginUrl.pathname = "/login";
+  loginUrl.searchParams.set("redirect", `${pathname}${search}`);
+
+  return NextResponse.redirect(loginUrl);
+}
+
+export const config = {
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)"],
+};
