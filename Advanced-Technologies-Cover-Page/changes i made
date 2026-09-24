@@ -1,0 +1,98 @@
+1. Executive Summary
+The goal of today’s changes was to achieve full functional and UI parity between the React Case Details Veteran Profile (case-details.tsx, case-details-read.tsx, case-details-edit.tsx) and the legacy application (VeteranInfo.js, _veteranProfile.cshtml, and VeteranService.cs). Specifically, we fixed address payload mapping, response parsing for backend C# Tuples, confirmation and alert modals, country display formatting, and toast notifications.
+
+2. Detailed Changes by File & Feature
+A. Address Payload Alignment (
+case-details.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L1265-L1310))
+Change:
+Corrected the mapping in handleSave:
+Residency Address mapped to Address1, Address2, Address3, City, State, Zip, Phone, EmailAddress.
+Communication Address mapped to ESR_Address1, ESR_Address2, ESR_Address3, ESR_City, ESR_State, ESR_ZipOrPostalCode, ESR_PrimaryPhone, ESR_EmailAddress.
+Added ForceSave: false and VeteranNumber: formDataEdit.fileNumber.
+Technical Reason / Legacy Alignment:
+In the ASP.NET backend model (UpdateVeteranInfoAlternateAddressViewModel.cs) and VeteranService.cs, Address1..3 and Zip represent the Residency Address, while ESR_Address1..3 and ESR_ZipOrPostalCode represent the Communication Address.
+Previously, the React payload had them swapped/inverted. This caused the backend to not detect changes in residency address and led to submission failures.
+B. Response Parsing for Backend C# Tuples (extractBackendMessage) (
+case-details.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L1070-L1095))
+Change:
+Added a resilient message extraction helper extractBackendMessage(respData) that inspects Item1, item1, re, result, and data.
+Technical Reason / Legacy Alignment:
+The microservice endpoint at /Veteran/UpdateVeteranInfo returns an ASP.NET Tuple<string, string>, serialized into JSON as {"Item1": "...", "Item2": ""} (e.g. {"Item1": "RegionChange", "Item2": ""} or {"Item1": "ZIP Code not found.", "Item2": ""}).
+Previously, React only checked res?.re (from old MVC controllers). Because re was undefined, it threw a runtime error caught by catch (err), resulting in the generic "Submission failed. Please try again." toast. Unpacking Item1 ensures direct compatibility with the microservice API.
+C. "Confirm Region Change" Modal (
+case-details.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L1313-L1318) & 
+#L1899-L1925
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L1899-L1925))
+Change:
+Implemented region change detection via isRegionChangeResponse.
+Triggered ConfirmationModal titled Confirm Region Change with description:
+"The entered residency address would result in a change to the region mapping for future appointments, would you like to continue?"
+
+Added cancelButtonSx={{ textDecoration: "none", "&:hover": { textDecoration: "none" } }} to remove the underline on the Cancel button.
+When the user clicks OK, the app automatically re-submits the update with ForceSave: true.
+Technical Reason / Legacy Alignment:
+Matches legacy VeteranInfo.js (lines 523–555). When a veteran's residency ZIP belongs to a different VA region, the backend prevents automatic reassignment unless confirmed by the user via ForceSave: true.
+D. Invalid ZIP Code Alert Modal (
+case-details.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L1328-L1338))
+Change:
+When the backend returns "ZIP Code not found.", React now displays the ConfirmationModal in Alert mode:
+Title: ALERT
+Message: ZIP Code not found. Please enter a valid ZIP Code.
+Button: OK
+The user remains on the edit screen (isEditMode stays true) so they can correct the ZIP code.
+Technical Reason / Legacy Alignment:
+Matches legacy VeteranInfo.js (lines 503–517) bootbox.alert({ title: "ALERT", message: "ZIP Code not found. Please enter a valid ZIP Code." }).
+Previously, React displayed an error toast instead of an alert modal.
+E. "No Change" Alert Modal & Read-Only Redirection (
+case-details.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L1373-L1395))
+Change:
+Added isFormUnchanged() comparison helper and backend message check for "no change".
+When saved with no changes made, the app redirects to read-only view (setIsEditMode(false)), opens an Alert modal with:
+"Veteran profile: No Change in veteran Address/Phone/Email/SMSOptIn/Waiver" and triggers an info toast.
+
+Technical Reason / Legacy Alignment:
+Matches legacy VeteranInfo.js (lines 563–568). In the old app, clicking save without modifications closes edit mode and alerts the user that no changes occurred.
+F. Original Success Toast Reverted (
+case-details.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L1396-L1406))
+Change:
+When actual changes are successfully saved, the toast message was reverted to its exact original text:
+"The veteran information was updated successfully."
+
+Technical Reason / Legacy Alignment:
+The backend returns a short status string ("Updated..!"), which was temporarily shown in the toast. Reverted this back to the established application standard.
+G. Country Name Removal from Address Display (
+case-details-read.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details-read.tsx) & 
+case-details-edit.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details-edit.tsx))
+Change:
+Updated fmtAddress in both read and edit views to output {Street}, {City}, {State} {Zip} without appending the country name , USA.
+Added stripCountry helper to sanitize any raw strings returned from legacy services.
+Technical Reason / Legacy Alignment:
+In legacy _veteranProfile.cshtml (lines 115, 148), the address line displays {{veternInfo.City}}, {{veternInfo.State}} {{veternInfo.Zip}}. It does not show country name for domestic US addresses.
+H. Multi-Key Fallback for Address Properties (
+case-details.tsx
+/VA-MDE-App/webapp/mde-web-app/src/pages/case-search/case-details/case-details.tsx#L277-L285))
+Change:
+Updated getVal(res, ...keys) to support a variable list of fallback property names (e.g. Zip, ZipOrPostalCode, Default_Zip).
+Technical Reason / Legacy Alignment:
+Different backend microservice endpoints return residency ZIP under different casing and property names (Zip vs ZipOrPostalCode). This ensures the form is always populated correctly regardless of the source.
+I. TypeScript Types (
+src/services/veteran.ts
+/VA-MDE-App/webapp/mde-web-app/src/services/veteran.ts#L40-L41))
+Change:
+Added ForceSave?: boolean; and VeteranNumber?: string | null; to UpdateVeteranInfoPayload.
+Technical Reason / Legacy Alignment:
+Aligns frontend TypeScript interfaces with the ASP.NET UpdateVeteranInfoAlternateAddressViewModel model.
+3. Verification Results
+Build / Type Check: Executed npx tsc --noEmit — completed with 0 errors.
+Invalid ZIP: Changing to an invalid ZIP triggers the ALERT modal with "ZIP Code not found. Please enter a valid ZIP Code." and remains on edit view.
+Different Region ZIP: Changing residency ZIP to another VA region triggers the Confirm Region Change modal with a clean, non-underlined Cancel button.
+No Change: Saving with no edits closes edit mode and shows the "No Change in veteran..." alert modal.
+Valid Change: Saving valid edits shows "The veteran information was updated successfully.".
