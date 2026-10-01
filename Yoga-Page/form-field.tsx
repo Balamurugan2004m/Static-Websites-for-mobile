@@ -69,7 +69,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
     const effectiveMaxLength = useMemo(() => {
       if (typeof maxLength === "number" && maxLength > 0) return maxLength;
       if (type === "date") return 10;
-      if (field === "PhoneNumber") return 10;
+      if (field === "PhoneNumber") return 13;
       if (field === "UserNPINumber") return 10;
       if (field === "HoursPerWeek") return 3;
       if (field === "VendorId") return 100;
@@ -78,6 +78,15 @@ const FormField: React.FC<FormFieldProps> = React.memo(
       if (field === "UserSpecialConsiderations") return 1000;
       return undefined;
     }, [maxLength, field, type]);
+
+    const formatPhoneNumber = (val: string): string => {
+      if (!val) return "";
+      const digits = String(val).replace(/\D/g, "").slice(0, 10);
+      if (!digits) return "";
+      if (digits.length < 3) return `(${digits}`;
+      if (digits.length <= 6) return `(${digits.slice(0, 3)})${digits.slice(3)}`;
+      return `(${digits.slice(0, 3)})${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+    };
 
     const formatDisplayDate = (val: string): string => {
       if (!val) return "";
@@ -305,7 +314,22 @@ const FormField: React.FC<FormFieldProps> = React.memo(
           return;
         }
 
-        if (field === "PhoneNumber" || field === "UserNPINumber") {
+        if (field === "PhoneNumber") {
+          const raw = e.target.value;
+          if (!raw) {
+            onChange(field, "");
+            return;
+          }
+          const prevStr = String(value || "");
+          let newDigits = raw.replace(/\D/g, "").slice(0, 10);
+          if (raw.length < prevStr.length && newDigits === prevStr.replace(/\D/g, "")) {
+            newDigits = newDigits.slice(0, -1);
+          }
+          onChange(field, formatPhoneNumber(newDigits));
+          return;
+        }
+
+        if (field === "UserNPINumber") {
           const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
           onChange(field, digits);
           return;
@@ -324,18 +348,23 @@ const FormField: React.FC<FormFieldProps> = React.memo(
 
         onChange(field, e.target.value);
       },
-      [field, onChange, type, isThresholdHoursField, effectiveMaxLength]
+      [field, onChange, type, isThresholdHoursField, effectiveMaxLength, value]
     );
 
     const resolvedPlaceholder = useMemo(() => {
       if (type === "date") return (isEditing || isAdding) ? (placeholder || "DD/MM/YYYY") : "";
       if (!(isEditing || isAdding)) return "";
-      if (placeholder !== undefined && placeholder !== null) return placeholder;
-      if (showTypePlaceholder || borderIncludedField.includes(field)) {
-        return `Type ${label}`;
+      if (field === "PhoneNumber") {
+        return placeholder || "Phone Number";
       }
-      return label;
-    }, [isEditing, isAdding, placeholder, showTypePlaceholder, borderIncludedField, field, label, type]);
+      const baseText = placeholder !== undefined && placeholder !== null && placeholder !== ""
+        ? placeholder
+        : label;
+      if (baseText.startsWith("Type ")) {
+        return baseText;
+      }
+      return `Type ${baseText}`;
+    }, [isEditing, isAdding, placeholder, field, label, type]);
 
     return (
       <div
@@ -505,7 +534,9 @@ const FormField: React.FC<FormFieldProps> = React.memo(
             placeholder={resolvedPlaceholder}
             disabled={disabled}
             value={
-              isThresholdHoursField && value !== "" && Number(value) < 0
+              field === "PhoneNumber"
+                ? formatPhoneNumber(value)
+                : isThresholdHoursField && value !== "" && Number(value) < 0
                 ? "0"
                 : value
             }
