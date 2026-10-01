@@ -30,6 +30,7 @@ import { useTableColumns } from "../tables/table-columns";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { getAccountUserByUsername } from "../../../services/account-users";
 import RefreshIcon from "../../../assets/icons/refresh.svg"; 
+import WarningIcon from "../../../assets/warning_icon.svg";
 import { mapToAddUserApiPayload, mapToApiPayload, mapToEditApiPayload } from "../utils";
 import { THEME_PRIMITIVES } from "../../../theme";
 import { getAllDbqMaster } from "../../../services/case-details";
@@ -246,14 +247,21 @@ const toCertificationPayload = (courses: CertificationCourse[] = []): Certificat
     }));
 
 const getErrorMessage = (error: any, fallback: string): string => {
-    const apiMessage =
-        error?.response?.data?.message ||
-        error?.response?.data?.error ||
-        error?.response?.data?.title ||
-        (Array.isArray(error?.response?.data?.errors) ? error.response.data.errors.join(", ") : null) ||
-        error?.message;
-
-    return typeof apiMessage === "string" && apiMessage.trim() ? apiMessage : fallback;
+    const data = error?.response?.data;
+    if (typeof data === "string" && data.trim()) return data.trim();
+    if (data && typeof data === "object") {
+        if (typeof data.message === "string" && data.message.trim()) return data.message.trim();
+        if (typeof data.error === "string" && data.error.trim()) return data.error.trim();
+        if (typeof data.Content === "string" && data.Content.trim()) return data.Content.trim();
+        if (typeof data.title === "string" && data.title.trim()) return data.title.trim();
+        if (Array.isArray(data.errors)) return data.errors.join(", ");
+        if (data.errors && typeof data.errors === "object") {
+            const msgs = Object.values(data.errors).flat().filter(Boolean);
+            if (msgs.length > 0) return msgs.join(", ");
+        }
+    }
+    if (typeof error?.message === "string" && error.message.trim()) return error.message.trim();
+    return fallback;
 };
 
 const inFlightUserDetailsRequests = new Map<string, Promise<ProviderUser>>(); // duplicate request prevention
@@ -358,6 +366,7 @@ const ProviderUserDetails: React.FC = () => {
         Array.isArray(formData?.SpecialtyCourses) ? formData.SpecialtyCourses : []
     );
     const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
+    const [unsavedModalOpen, setUnsavedModalOpen] = useState(false);
     const [bottomAccordionsExpanded, setBottomAccordionsExpanded] = useState<Record<BottomAccordionKey, boolean>>(
         () => createBottomAccordionState(true)
     );
@@ -644,9 +653,17 @@ const ProviderUserDetails: React.FC = () => {
 
             setFormData(prev => {
                 if (field === "Roles") {
-                    const updatedRoles = (prev.Roles || []).map(role => ({
+                    const selectedRoleNames = Array.isArray(value)
+                        ? value
+                        : typeof value === "string" && value.trim()
+                        ? [value.trim()]
+                        : [];
+                    const baseRoles = (prev.Roles && prev.Roles.length > 0)
+                        ? prev.Roles
+                        : (Array.isArray(userRoles) && userRoles.length > 0 ? userRoles : []);
+                    const updatedRoles = baseRoles.map((role: any) => ({
                         ...role,
-                        IsSelected: Array.isArray(value) ? value.includes(role.Name) : false,
+                        IsSelected: selectedRoleNames.includes(role?.Name),
                     }));
                     const next = { ...prev, Roles: updatedRoles };
                     if (userId) dispatch(upsertAccountUserData({ username: userId, data: next }));
@@ -668,10 +685,57 @@ const ProviderUserDetails: React.FC = () => {
     }, [dispatch]);
 
     const updateUser = useCallback(async () => {
-        const roleNames = (formData?.Roles || [])
-            .filter((role: any) => role?.IsSelected)
-            .map((role: any) => String(role?.Name ?? ""));
-        const selectedRoles = (formData?.Roles || []);
+        const selectedRoleValues: string[] = [];
+        if (Array.isArray(formData?.Roles)) {
+            formData.Roles.forEach((r: any) => {
+                if (typeof r === "string" && r.trim()) {
+                    selectedRoleValues.push(r.trim());
+                } else if (r && typeof r === "object") {
+                    if (r.IsSelected) {
+                        if (r.Name) selectedRoleValues.push(String(r.Name).trim());
+                        if (r.ApplicationRoleId) selectedRoleValues.push(String(r.ApplicationRoleId).trim());
+                    }
+                }
+            });
+        } else if (typeof (formData as any)?.Roles === "string" && (formData as any).Roles.trim()) {
+            selectedRoleValues.push((formData as any).Roles.trim());
+        }
+
+        const baseRoleList = (Array.isArray(userRoles) && userRoles.length > 0)
+            ? userRoles
+            : (Array.isArray(formData?.Roles) && formData.Roles.length > 0 ? formData.Roles : []);
+
+        const mappedRolesForAccount = baseRoleList.map((role: any) => {
+            const roleName = String(role?.Name ?? "").trim();
+            const roleId = String(role?.ApplicationRoleId ?? role?.Id ?? "").trim();
+            const isSelected = selectedRoleValues.some(v =>
+                v.toLowerCase() === roleName.toLowerCase() || (roleId && v === roleId)
+            );
+            return {
+                ApplicationRoleId: String(role?.ApplicationRoleId || roleId || "0"),
+                Name: roleName,
+                NormalizedName: String(role?.NormalizedName || roleName.toUpperCase()),
+                Description: String(role?.Description || roleName),
+                TenantId: Number(role?.TenantId || 1),
+                IsActive: role?.IsActive ?? true,
+                UserTypeRole: Number(role?.UserTypeRole ?? 1),
+                IsProvider: Boolean(role?.IsProvider ?? roleName.toLowerCase().includes("provider")),
+                IsSelected: isSelected,
+            };
+        });
+
+        if (mappedRolesForAccount.length > 0 && !mappedRolesForAccount.some(r => r.IsSelected)) {
+            const providerRole = mappedRolesForAccount.find(r => r.Name.toLowerCase() === "provider");
+            if (providerRole) {
+                providerRole.IsSelected = true;
+            } else {
+                mappedRolesForAccount[0].IsSelected = true;
+            }
+        }
+
+        const selectedRoleNames = mappedRolesForAccount
+            .filter((r: any) => r.IsSelected)
+            .map((r: any) => r.Name);
         const userLicences = (licenseTableRef.current?.getLicenses() || []).map((lic: any) => ({
             UserNPINumber: String(formData?.UserNPINumber ?? ""),
             UserLicenceNumber: String(lic?.UserLicenceNumber ?? ""),
@@ -741,7 +805,7 @@ const ProviderUserDetails: React.FC = () => {
             PhoneNumber: phoneDigits,
             NpiNumber: String(formData?.UserNPINumber ?? ""),
             EmailAddress: String((formData as any)?.EmailAddress ?? formData?.Email ?? ""),
-            Role: roleNames,
+            Role: selectedRoleNames,
             FacilityId: toNumberArray(formData?.FacilityId),
             FacilityIdOther: toNumberArray(formData?.FacilityIdOther),
             FacilityIdApprover: toNumberArray((formData as any)?.FacilityIdApprover),
@@ -786,11 +850,33 @@ const ProviderUserDetails: React.FC = () => {
                 const accountPayload: any = mapToAddUserApiPayload({
                     ...formData,
                     PhoneNumber: phoneDigits,
-                    Roles: selectedRoles,
+                    Roles: mappedRolesForAccount,
+                    Role: selectedRoleNames,
                 });
 
                 const res = await addAccountUser(accountPayload);
-                await addProviderUser(mapToApiPayload({...payload, UserId: res}));
+                let createdUserId = typeof res === "number"
+                    ? res
+                    : Number((res as any)?.data ?? (res as any)?.UserId ?? (res as any)?.id ?? (res as any)?.userId ?? 0);
+
+                if (!createdUserId || isNaN(createdUserId)) {
+                    try {
+                        const fetchedUser: any = await getAccountUserByUsername(accountPayload.UserName);
+                        createdUserId = Number(fetchedUser?.Id ?? fetchedUser?.UserId ?? 0);
+                    } catch (e) {
+                        console.warn("Could not lookup created user by username", e);
+                    }
+                }
+
+                if (!createdUserId || isNaN(createdUserId)) {
+                    throw new Error("Account user created but failed to obtain a valid UserId for provider credentialing.");
+                }
+
+                await addProviderUser(mapToApiPayload({
+                    ...payload,
+                    UserId: createdUserId,
+                    Role: selectedRoleNames,
+                }));
             } else {
                 await editProviderUser(mapToEditApiPayload({ ...payload }));
             }
@@ -799,7 +885,7 @@ const ProviderUserDetails: React.FC = () => {
             console.error(`Failed to ${action}.`, error);
             throw error;
         }
-    }, [boardCertificationData, formData, isCreate, recertificationCourses, requiredCertificationCourses, selectedGPTCodes, specialtyCourses, userEducation]);
+    }, [boardCertificationData, formData, isCreate, recertificationCourses, requiredCertificationCourses, selectedGPTCodes, specialtyCourses, userEducation, userRoles, specialties]);
    
     const handleSave = useCallback(async () => {
         const { isValid, firstError, firstErrorField } = validateForm();
@@ -849,14 +935,62 @@ const ProviderUserDetails: React.FC = () => {
         }
     }, [dispatch, formData, handleOpenTab, isCreate, navigate, updateUser, userId, validateForm]);
 
-    const handleCancel = useCallback(() => {
+    const isFormDirty = useCallback(() => {
+        const textFields: (keyof ProviderUser)[] = [
+            "FirstName",
+            "LastName",
+            "PrintName",
+            "Email",
+            "PhoneNumber",
+            "AddressLine1",
+            "AddressLine2",
+            "City",
+            "State",
+            "Zip",
+            "UserName",
+            "ProfessionalTitle",
+            "UserNPINumber" as any,
+            "VBATrainId" as any,
+            "CredentialingStatus",
+            "UserSpecialConsiderations",
+            "Malpractice" as any,
+        ];
+
+        for (const key of textFields) {
+            if (String((formData as any)[key] ?? "").trim() !== "") {
+                return true;
+            }
+        }
+
+        if (formData.Affiliation !== null && formData.Affiliation !== undefined && formData.Affiliation !== 0) return true;
+        if (formData.OrganizationId !== null && formData.OrganizationId !== undefined && formData.OrganizationId !== 0) return true;
+        if (Array.isArray(formData.FacilityId) && formData.FacilityId.length > 0) return true;
+        if (Array.isArray(formData.FacilityIdOther) && formData.FacilityIdOther.length > 0) return true;
+        if (Array.isArray(formData.Specialities) && formData.Specialities.length > 0) return true;
+        if (Array.isArray(formData.SchedulingType) && formData.SchedulingType.length > 0) return true;
+        if (Array.isArray(formData.Roles) && formData.Roles.some((r: any) => r?.IsSelected)) return true;
+        if (Array.isArray(userEducation) && userEducation.length > 0) return true;
+        if (Array.isArray(boardCertificationData) && boardCertificationData.length > 0) return true;
+        if (Array.isArray(selectedGPTCodes) && selectedGPTCodes.length > 0) return true;
+        if (licenseTableRef.current?.getLicenses && licenseTableRef.current.getLicenses().length > 0) return true;
+
+        return false;
+    }, [formData, userEducation, boardCertificationData, selectedGPTCodes]);
+
+    const executeLeave = useCallback(() => {
+        setUnsavedModalOpen(false);
         if (isCreate) {
             navigate("/provider-management/users");
+        } else {
+            handleOpenTab(userId, false);
+            setErrors({});
+            if (userId) dispatch(cancelUpsertAccountUserData({ username: userId }));
         }
-        handleOpenTab(userId, false);
-        setErrors({});
-        if (userId) dispatch(cancelUpsertAccountUserData({ username: userId }));
     }, [dispatch, handleOpenTab, isCreate, navigate, userId]);
+
+    const handleCancel = useCallback(() => {
+        setUnsavedModalOpen(true);
+    }, []);
 
     const handleEditClick = useCallback(() => {
         handleOpenTab(userId, true);
@@ -1526,7 +1660,7 @@ const ProviderUserDetails: React.FC = () => {
                     <Typography variant="h6" sx={styles.userTitle} onClick={handleCancel}>
                         Users
                     </Typography>
-                    <Box onClick={handleCancel} sx={styles.userTabs}>
+                    <Box sx={styles.userTabs}>
                         <Tooltip title="Refresh" sx={{ mr: 1 }}>
                             <IconButton
                                 size="small"
@@ -2041,6 +2175,102 @@ const ProviderUserDetails: React.FC = () => {
                 onCancel={handleRefreshClose}
                 onClose={handleRefreshClose}
                 isDarkMode={isDarkMode}
+            />
+
+            <ConfirmationModal
+                open={unsavedModalOpen}
+                title="Warning!"
+                highlightMessage={"You have unsaved changes. If you leave now, they'll be lost.\nDo you want to continue?"}
+                confirmLabel="Yes"
+                cancelLabel="No"
+                warningIcon={WarningIcon}
+                showHighlight
+                showCloseIcon
+                highlightMarginBottom={0}
+                onConfirm={executeLeave}
+                onCancel={() => setUnsavedModalOpen(false)}
+                onClose={() => setUnsavedModalOpen(false)}
+                isDarkMode={isDarkMode}
+                dialogSx={{
+                    width: "530px !important",
+                    maxWidth: "530px !important",
+                    borderRadius: "10px !important",
+                    boxShadow: "0px 8px 24px rgba(0, 0, 0, 0.15) !important",
+                    backgroundColor: isDarkMode ? `${P.secondaryElevatedDark} !important` : "#FFFFFF !important",
+                    "& .MuiDialogTitle-root": {
+                        p: 0,
+                        backgroundColor: isDarkMode ? `${P.secondaryElevatedDark} !important` : "#F5F5F5 !important",
+                    },
+                    "& .MuiDialogTitle-root > .MuiBox-root": {
+                        px: "24px !important",
+                        height: "54px !important",
+                        borderBottom: `1px solid ${isDarkMode ? "rgba(255, 255, 255, 0.12)" : "#E0E0E0"} !important`,
+                        backgroundColor: isDarkMode ? `${P.secondaryElevatedDark} !important` : "#F5F5F5 !important",
+                    },
+                    "& .MuiDialogContent-root": {
+                        px: "24px !important",
+                        pt: "20px !important",
+                        pb: "20px !important",
+                        borderTop: "none !important",
+                        borderBottom: "none !important",
+                        backgroundColor: isDarkMode ? `${P.gridHeaderDark} !important` : "#FFFFFF !important",
+                    },
+                    "& .MuiDialogActions-root": {
+                        px: "24px !important",
+                        py: "14px !important",
+                        borderTop: `1px solid ${isDarkMode ? "rgba(255, 255, 255, 0.12)" : "#E0E0E0"} !important`,
+                        backgroundColor: isDarkMode ? `${P.secondaryElevatedDark} !important` : "#F5F5F5 !important",
+                        gap: "12px !important",
+                    },
+                }}
+                titleSx={{
+                    fontSize: "16px !important",
+                    fontWeight: "700 !important",
+                    color: isDarkMode ? "#FFFFFF !important" : "#1C1B1F !important",
+                }}
+                closeIconSx={{
+                    color: isDarkMode ? "#FFFFFF !important" : "#000000 !important",
+                    fontSize: "20px !important",
+                    stroke: isDarkMode ? "#FFFFFF" : "#000000",
+                    strokeWidth: 0.8,
+                }}
+                confirmButtonSx={{
+                    width: "90px",
+                    height: "34px",
+                    minWidth: "90px",
+                    padding: 0,
+                    borderRadius: "10px",
+                    backgroundColor: "#244794",
+                    color: "#FFFFFF",
+                    fontSize: "14px",
+                    fontWeight: 400,
+                    textTransform: "none",
+                    boxShadow: "none",
+                    "&:hover": {
+                        backgroundColor: "#244794",
+                        boxShadow: "none",
+                    },
+                }}
+                cancelButtonSx={{
+                    width: "90px",
+                    height: "34px",
+                    minWidth: "90px",
+                    padding: 0,
+                    borderRadius: "10px",
+                    backgroundColor: isDarkMode ? P.inputBgDark : "#E5E3E3",
+                    border: "none",
+                    color: isDarkMode ? "#FFFFFF" : "#454545",
+                    fontSize: "14px",
+                    fontWeight: 400,
+                    textTransform: "none",
+                    textDecoration: "none !important",
+                    boxShadow: "none",
+                    "&:hover": {
+                        backgroundColor: isDarkMode ? P.inputBgDark : "#DCDADA",
+                        boxShadow: "none",
+                        textDecoration: "none !important",
+                    },
+                }}
             />
         </Box>
     );
