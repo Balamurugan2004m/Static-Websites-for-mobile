@@ -1,90 +1,83 @@
-@import url("https://fonts.googleapis.com/css2?family=Bree+Serif&family=Caveat:wght@400;700&family=Lobster&family=Monoton&family=Open+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Playfair+Display+SC:ital,wght@0,400;0,700;1,700&family=Playfair+Display:ital,wght@0,400;0,700;1,700&family=Roboto:ital,wght@0,400;0,700;1,400;1,700&family=Source+Sans+Pro:ital,wght@0,400;0,700;1,700&family=Work+Sans:ital,wght@0,400;0,700;1,700&display=swap");
-
-.bg-container {
-    background-image: url('https://assets.ccbp.in/frontend/static-website/yoga-bg.png');
-    background-size: cover;
-    height: 100vh;
-    text-align: center;
-    padding: 20px;
+.dateInput {
+  text-transform: uppercase;
 }
 
-.home-page-image {
-    height: 250px;
+/* Date input placeholder should be grey when empty (works in Firefox, Chrome, Edge, Safari) */
+.dateInput:not(.has-value),
+.dateInput:not(.has-value)::-webkit-datetime-edit,
+.dateInput:not(.has-value):read-only::-webkit-datetime-edit,
+.dateInput:not(.has-value)::-webkit-datetime-edit-localized,
+.dateInput:not(.has-value)::-webkit-datetime-edit-year-field,
+.dateInput:not(.has-value)::-webkit-datetime-edit-month-field,
+.dateInput:not(.has-value)::-webkit-datetime-edit-day-field,
+.dateInput:not(.has-value)::-webkit-datetime-edit-text {
+  color: #757575 !important;
+  text-transform: uppercase;
 }
 
-.home-page-heading {
-    color: #132d84;
-    font-family: "Roboto";
-    font-size: 26px;
-    font-weight: bold;
+.dateInput.formFieldInput--dark:not(.has-value),
+.dateInput.formFieldInput--dark:not(.has-value)::-webkit-datetime-edit,
+.dateInput.formFieldInput--dark:not(.has-value):read-only::-webkit-datetime-edit,
+.dateInput.formFieldInput--dark:not(.has-value)::-webkit-datetime-edit-localized,
+.dateInput.formFieldInput--dark:not(.has-value)::-webkit-datetime-edit-year-field,
+.dateInput.formFieldInput--dark:not(.has-value)::-webkit-datetime-edit-month-field,
+.dateInput.formFieldInput--dark:not(.has-value)::-webkit-datetime-edit-day-field,
+.dateInput.formFieldInput--dark:not(.has-value)::-webkit-datetime-edit-text {
+  color: #ccc !important;
+  text-transform: uppercase;
 }
 
-.space-for-image {
-    margin-top: 200px;
+/* When date input has a value, show standard text color */
+.dateInput.has-value,
+.dateInput.has-value::-webkit-datetime-edit,
+.dateInput.has-value:read-only::-webkit-datetime-edit,
+.dateInput.has-value:focus::-webkit-datetime-edit,
+.dateInput.has-value:disabled::-webkit-datetime-edit,
+.dateInput.has-value::-webkit-datetime-edit-localized,
+.dateInput.has-value::-webkit-datetime-edit-year-field,
+.dateInput.has-value::-webkit-datetime-edit-month-field,
+.dateInput.has-value::-webkit-datetime-edit-day-field,
+.dateInput.has-value::-webkit-datetime-edit-text {
+  color: #000 !important;
 }
 
-.space-for-descriptions {
-    margin-top: 25px;
+.dateInput.has-value.formFieldInput--dark,
+.dateInput.has-value.formFieldInput--dark::-webkit-datetime-edit,
+.dateInput.has-value.formFieldInput--dark:read-only::-webkit-datetime-edit,
+.dateInput.has-value.formFieldInput--dark:focus::-webkit-datetime-edit,
+.dateInput.has-value.formFieldInput--dark:disabled::-webkit-datetime-edit,
+.dateInput.has-value.formFieldInput--dark::-webkit-datetime-edit-localized,
+.dateInput.has-value.formFieldInput--dark::-webkit-datetime-edit-year-field,
+.dateInput.has-value.formFieldInput--dark::-webkit-datetime-edit-month-field,
+.dateInput.has-value.formFieldInput--dark::-webkit-datetime-edit-day-field,
+.dateInput.has-value.formFieldInput--dark::-webkit-datetime-edit-text {
+  color: #ffffff !important;
 }
 
-.home-page-paragraph {
-    color: #323f4b;
-    font-family: "Roboto";
-    font-size: 18px;
-    font-weight: 500;
+.formFieldInput::placeholder {
+  opacity: 1;
+  color: #757575;
 }
 
-.home-button {
-    color: #fad693;
-    background-color: #132d84;
+.formFieldInput--dark::placeholder {
+  color: #ccc;
 }
 
-.home-button:hover {
-    color: #fad693;
+/* Cross-browser date stepper: hide native WebKit inner spin button so our stepper displays consistently */
+.dateInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  display: none;
+  margin: 0;
 }
 
-.second-bg-container {
-    background-color: #ffedcb;
-    padding: 20px;
+/* Native date calendar icon — white in dark mode */
+.dateInput.formFieldInput--dark::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 1;
+  filter: invert(1) brightness(2);
 }
 
-.girl-image-without-headset {
-    height: 200px;
-}
-
-.top-section-heading {
-    color: #132d84;
-    font-family: "Roboto";
-    font-size: 26px;
-    padding-top: 15px;
-}
-
-.back-button {
-    width: 90px;
-}
-
-.card-image {
-    height: 80px;
-}
-
-.card-container {
-    background-color: #ffe2ab;
-    border-radius: 10px;
-    padding: 10px;
-}
-
-.text-container {
-    padding-left: 15px;
-}
-
-.card-head {
-    color: #132d84;
-    font-family: "Roboto";
-    font-size: 20px;
-}
-
-.card-para {
-    color: #132d84;
-    font-family: "Roboto";
-    font-size: 14px;
+.dateInput.formFieldInput--dark::-webkit-calendar-picker-indicator:hover {
+  cursor: pointer;
+  filter: invert(1) brightness(2.2);
 }

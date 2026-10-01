@@ -1,0 +1,443 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React from "react";
+import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import RenderField from "./render-field";
+
+/* MOCKS WITH CORRECT PATHS */
+jest.mock("./select-filed", () => {
+  return function MockSelectField({
+    field,
+    value,
+    onChange,
+    "data-testid": testId,
+    options = [],
+    disabled,
+    isMulti,
+  }: any) {
+    const getValue = (opt: any) =>
+      typeof opt === "string"
+        ? opt
+        : opt?.Id !== undefined
+        ? String(opt.Id)
+        : opt?.Name || opt?.keyValue || opt?.label || "";
+
+    const selectValue = isMulti
+      ? Array.isArray(value)
+        ? value
+        : []
+      : value ?? "";
+
+    return (
+      <select
+        data-testid={testId || `input-${field}`}
+        value={selectValue}
+        multiple={isMulti}
+        onChange={(e) => {
+          if (isMulti) {
+            const values = Array.from(
+              e.target.selectedOptions,
+              (option) => option.value
+            );
+
+            onChange?.(field, values);
+          } else {
+            onChange?.(field, e.target.value);
+          }
+        }}
+        disabled={disabled}
+      >
+        {!isMulti && <option value="">Select...</option>}
+
+        {options.map((opt: any, index: number) => (
+          <option key={index} value={getValue(opt)}>
+            {getValue(opt)}
+          </option>
+        ))}
+      </select>
+    );
+  };
+});
+
+jest.mock("./password-filed", () => {
+  return function MockPasswordField({
+    value,
+    isEditing,
+    onChange,
+    onResetPasswordClick,
+    passwordResetting,
+  }: any) {
+    return (
+      <div data-testid="password-field">
+        {!isEditing && (
+          <input
+            data-testid="input-password"
+            value={value || ""}
+            onChange={(e) => onChange?.("Password", e.target.value)}
+          />
+        )}
+        {isEditing && (
+          <button
+            data-testid="reset-password-btn"
+            onClick={onResetPasswordClick}
+          >
+            {passwordResetting ? "Resetting..." : "Reset Password"}
+          </button>
+        )}
+      </div>
+    );
+  };
+});
+
+jest.mock("./form-field", () => {
+  return function MockFormField({
+    field,
+    value,
+    onChange,
+    type,
+    isEditing,
+    disabled,
+    "data-testid": testId,
+  }: any) {
+    return (
+      <input
+        data-testid={testId || `input-${field}`}
+        type={type || "text"}
+        value={value || ""}
+        onChange={(e) => onChange?.(field, e.target.value)}
+        readOnly={!isEditing}
+        disabled={disabled}
+      />
+    );
+  };
+});
+
+jest.mock("./multi-select-with-chips", () => {
+  return function MockMultiSelect({ value, onChange }: any) {
+    return (
+      <div data-testid="multi-select">
+        <div data-testid="multi-select-value">
+          {value?.length
+            ? value.map((v: any) => v.label).join(", ")
+            : "No selection"}
+        </div>
+        <button
+          data-testid="multi-select-change"
+          onClick={() =>
+            onChange?.([{ code: "1", label: "Option 1" }])
+          }
+        >
+          Change
+        </button>
+      </div>
+    );
+  };
+});
+
+jest.mock("../utils/provider-facility", () => ({
+  mapSelectedCodes: jest.fn((values, options) => {
+    if (Array.isArray(values) && values.length && typeof values[0] === 'object' && 'label' in values[0]) {
+      return values;
+    }
+    return options?.filter((opt: any) =>
+      values.includes(opt.code)
+    );
+  }),
+}));
+
+/* THEME WRAPPER */
+const renderWithTheme = (ui: React.ReactElement) => {
+  const theme = createTheme();
+  return render(<ThemeProvider theme={theme}>{ui}</ThemeProvider>);
+};
+
+const baseProps = {
+  fieldConfig: { field: "testField", label: "Test Field", type: "text" },
+  formData: {},
+  errors: {},
+  isEditing: true,
+  handleChange: jest.fn(),
+  required: false,
+  disabled: false,
+  selectOptions: {},
+};
+
+describe("RenderField Full Coverage", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("renders default input", () => {
+    renderWithTheme(<RenderField {...baseProps} />);
+    expect(screen.getByTestId("input-testField")).toBeInTheDocument();
+  });
+
+  it("renders select field", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "Role", type: "select" }}
+      />
+    );
+    expect(screen.getByTestId("input-Role")).toBeInTheDocument();
+  });
+
+  it("handles select change", () => {
+    const handleChange = jest.fn();
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        handleChange={handleChange}
+        fieldConfig={{ field: "Role", type: "select", options: ["A"] }}
+      />
+    );
+    fireEvent.change(screen.getByTestId("input-Role"), {
+      target: { value: "A" },
+    });
+    expect(handleChange).toHaveBeenCalledWith("Role", "A");
+  });
+
+  it("maps Yes/No correctly", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{
+          field: "SmartFacility",
+          type: "select",
+          options: ["Yes", "No"],
+        }}
+        formData={{ SmartFacility: true }}
+      />
+    );
+    expect(screen.getByTestId("input-SmartFacility")).toHaveValue("Yes");
+  });
+
+  it("maps nullable Yes/No", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{
+          field: "HasInternetConnectivity",
+          type: "select",
+          options: ["Yes", "No"],
+        }}
+        formData={{ HasInternetConnectivity: null }}
+      />
+    );
+    expect(screen.getByTestId("input-HasInternetConnectivity")).toHaveValue("");
+  });
+
+  it("handles disabled select", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        disabled
+        fieldConfig={{ field: "Role", type: "select" }}
+      />
+    );
+    expect(screen.getByTestId("input-Role")).toBeDisabled();
+  });
+
+  it("renders multi-select", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "Items", type: "multiSelect" }}
+        formData={{ Items: [] }}
+      />
+    );
+    expect(screen.getByTestId("multi-select")).toBeInTheDocument();
+  });
+
+  it("multi-select shows empty state", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "Items", type: "multiSelect" }}
+        formData={{ Items: [] }}
+      />
+    );
+    expect(screen.getByTestId("multi-select-value")).toHaveTextContent("No selection");
+  });
+
+  it("multi-select triggers change", () => {
+    const handleChange = jest.fn();
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        handleChange={handleChange}
+        fieldConfig={{ field: "Items", type: "multiSelect" }}
+        formData={{ Items: [] }}
+      />
+    );
+    fireEvent.click(screen.getByTestId("multi-select-change"));
+    expect(handleChange).toHaveBeenCalled();
+  });
+
+  it("renders multiSelect as plain text in accountUsersForm view mode", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        isEditing={false}
+        accountUsersForm
+        fieldConfig={{
+          field: "Specialities",
+          label: "Specialty",
+          type: "multiSelect",
+        }}
+        formData={{
+          Specialities: [1, 2],
+        }}
+        selectOptions={{
+          specialties: [
+            { code: 1, label: "Cardiology" },
+            { code: 2, label: "Neurology" },
+          ],
+        }}
+      />
+    );
+    expect(screen.getByTestId("view-Specialities")).toHaveTextContent(
+      "Cardiology, Neurology"
+    );
+    expect(screen.queryByTestId("multi-select")).not.toBeInTheDocument();
+  });
+
+  it("renders password input when not editing", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        isEditing={false}
+        fieldConfig={{ field: "Password", type: "password" }}
+      />
+    );
+    expect(screen.getByTestId("input-password")).toBeInTheDocument();
+  });
+
+  it("renders reset button when editing", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "Password", type: "password" }}
+      />
+    );
+    expect(screen.getByTestId("reset-password-btn")).toBeInTheDocument();
+  });
+
+  it("handles password reset click", () => {
+    const fn = jest.fn();
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        setConfirmationModalOpen={fn}
+        fieldConfig={{ field: "Password", type: "password" }}
+      />
+    );
+    fireEvent.click(screen.getByTestId("reset-password-btn"));
+    expect(fn).toHaveBeenCalledWith(true);
+  });
+
+  it("renders readOnly when not editing", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        isEditing={false}
+        fieldConfig={{ field: "Name" }}
+      />
+    );
+    expect(screen.getByTestId("input-Name")).toHaveAttribute("readonly");
+  });
+
+  it("handles typing", async () => {
+    const user = userEvent.setup();
+    const handleChange = jest.fn();
+
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        handleChange={handleChange}
+        fieldConfig={{ field: "Name" }}
+      />
+    );
+
+    await user.type(screen.getByTestId("input-Name"), "abc");
+    expect(handleChange).toHaveBeenCalled();
+  });
+
+  it("handles empty formData", () => {
+    renderWithTheme(
+      <RenderField {...baseProps} fieldConfig={{ field: "Empty" }} />
+    );
+    expect(screen.getByTestId("input-Empty")).toBeInTheDocument();
+  });
+
+  it("handles cluster select field", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "ClusterLookupValueMappings", type: "select" }}
+        selectOptions={{ clusters: ["A"] }}
+      />
+    );
+    expect(screen.getByTestId("input-ClusterLookupValueMappings")).toBeInTheDocument();
+  });
+
+  it("handles organization mapping", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "OrganizationId", type: "select" }}
+        formData={{ OrganizationId: 1 }}
+        organizations={[{ Id: 1, OrganizationName: "Org1" }]}
+      />
+    );
+    expect(screen.getByTestId("input-OrganizationId")).toHaveValue("1");
+  });
+
+  it("handles lookup values", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "SkillLevel", type: "select" }}
+        formData={{ SkillLevel: 1 }}
+        lookUpValues={[{ LookupValueId: 1, Description: "High" }]}
+      />
+    );
+    expect(screen.getByTestId("input-SkillLevel")).toBeInTheDocument();
+  });
+
+  it("handles userTypeObjVal mapping", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "UserTypeId", type: "select" }}
+        formData={{ UserTypeId: "1" }}
+        userTypeObjVal={{ "1": "Admin" }}
+      />
+    );
+    expect(screen.getByTestId("input-UserTypeId")).toBeInTheDocument();
+  });
+
+  it("handles CalendarAdmin fallback", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        fieldConfig={{ field: "CalendarAdmin" }}
+        formData={{ SelectedFacilityCalAdmin: "Admin1" }}
+      />
+    );
+    expect(screen.getByTestId("input-CalendarAdmin")).toBeInTheDocument();
+  });
+
+  it("handles hideMultiSelectPadding", () => {
+    renderWithTheme(
+      <RenderField
+        {...baseProps}
+        hideMultiSelectPadding
+        fieldConfig={{ field: "Items", type: "multiSelect" }}
+        formData={{ Items: [] }}
+      />
+    );
+    expect(screen.getByTestId("multi-select")).toBeInTheDocument();
+  });
+});
