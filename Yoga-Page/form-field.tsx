@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import { useTheme } from "@mui/material/styles";
+import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
 import "./styles.css"
 import { THEME_PRIMITIVES } from "../../../theme";
 import { fieldErrorTextStyle } from "../utils/style-tokens";
@@ -80,8 +81,16 @@ const FormField: React.FC<FormFieldProps> = React.memo(
 
     const formatDisplayDate = (val: string): string => {
       if (!val) return "";
-      const trimmed = String(val).split("T")[0].trim();
-      const dashParts = trimmed.split("-");
+      const trimmed = String(val).trim();
+      if (trimmed.includes("/")) {
+        const slashParts = trimmed.split("/");
+        if (slashParts.length === 3 && slashParts[0].length === 4) {
+          // YYYY/MM/DD -> DD/MM/YYYY
+          return `${slashParts[2].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[0]}`;
+        }
+        return trimmed;
+      }
+      const dashParts = trimmed.split("T")[0].split("-");
       if (dashParts.length === 3) {
         if (dashParts[0].length === 4) {
           // YYYY-MM-DD -> DD/MM/YYYY
@@ -92,25 +101,21 @@ const FormField: React.FC<FormFieldProps> = React.memo(
           return `${dashParts[0].padStart(2, "0")}/${dashParts[1].padStart(2, "0")}/${dashParts[2]}`;
         }
       }
+      return trimmed;
+    };
+
+    const toIsoDate = (val: string): string => {
+      if (!val) return "";
+      const trimmed = String(val).trim();
       const slashParts = trimmed.split("/");
-      if (slashParts.length === 3) {
-        if (slashParts[0].length === 4) {
-          // YYYY/MM/DD -> DD/MM/YYYY
-          return `${slashParts[2].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[0]}`;
-        }
-        if (slashParts[2].length === 4) {
-          // DD/MM/YYYY
-          return `${slashParts[0].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[2]}`;
-        }
+      if (slashParts.length === 3 && slashParts[2].length === 4) {
+        return `${slashParts[2]}-${slashParts[1].padStart(2, "0")}-${slashParts[0].padStart(2, "0")}`;
       }
-      const d = new Date(val);
-      if (!Number.isNaN(d.getTime())) {
-        const dd = String(d.getDate()).padStart(2, "0");
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const yyyy = d.getFullYear();
-        return `${dd}/${mm}/${yyyy}`;
+      const dashParts = trimmed.split("-");
+      if (dashParts.length === 3 && dashParts[0].length === 4) {
+        return trimmed;
       }
-      return val;
+      return "";
     };
     const borderIncludedField = useMemo(() => {
       return ["VBATrainID", "VBATrainId", "UserSpecialConsiderations"];
@@ -265,7 +270,17 @@ const FormField: React.FC<FormFieldProps> = React.memo(
       (e: React.ChangeEvent<HTMLInputElement>) => {
         if (type === "date") {
           const raw = e.target.value;
-          const digits = raw.replace(/\D/g, "").slice(0, 8);
+          if (!raw) {
+            onChange(field, "");
+            return;
+          }
+          const prevDigits = String(value || "").replace(/\D/g, "");
+          const newDigits = raw.replace(/\D/g, "");
+          if (newDigits.length < prevDigits.length) {
+            onChange(field, raw);
+            return;
+          }
+          const digits = newDigits.slice(0, 8);
           let formatted = "";
           if (digits.length <= 2) {
             formatted = digits;
@@ -388,20 +403,100 @@ const FormField: React.FC<FormFieldProps> = React.memo(
             }}
             className={`formFieldInput${theme.palette.mode === "dark" ? " formFieldInput--dark" : ""}`}
           />
+        ) : type === "date" ? (
+          <div style={{ position: "relative", width: "100%" }}>
+            <input
+              id={field}
+              name={field}
+              data-field={field}
+              type="text"
+              inputMode="numeric"
+              maxLength={effectiveMaxLength}
+              placeholder={resolvedPlaceholder}
+              disabled={disabled}
+              value={formatDisplayDate(value)}
+              style={{
+                ...inputStyle,
+                ...((isAdding || isEditing) ? { paddingRight: "40px" } : {}),
+              }}
+              readOnly={!(isAdding || isEditing)}
+              onChange={handleInputChange}
+              className={`dateInput ${Boolean(value && String(value).trim().length > 0) ? "has-value" : ""} ${disabled && (isAdding || isEditing) ? "disabledInput" : ""} formFieldInput${theme.palette.mode === "dark" ? " formFieldInput--dark" : ""}`}
+            />
+            {(isEditing || isAdding) && (
+              <>
+                <button
+                  type="button"
+                  aria-label={`Open calendar for ${label}`}
+                  disabled={disabled}
+                  onClick={(e) => {
+                    const hiddenInput = e.currentTarget.parentElement?.querySelector('input[type="date"]') as HTMLInputElement | null;
+                    try {
+                      hiddenInput?.showPicker();
+                    } catch {
+                      hiddenInput?.focus();
+                    }
+                  }}
+                  style={{
+                    position: "absolute",
+                    right: "10px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: disabled ? "default" : "pointer",
+                    padding: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: theme.palette.mode === "dark" ? "#ffffff" : "#757575",
+                    zIndex: 2,
+                    borderRadius: "50%",
+                  }}
+                >
+                  <CalendarTodayOutlinedIcon sx={{ fontSize: 18 }} />
+                </button>
+                <input
+                  type="date"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  disabled={disabled}
+                  value={toIsoDate(value)}
+                  style={{
+                    position: "absolute",
+                    right: "10px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: "24px",
+                    height: "24px",
+                    opacity: 0,
+                    pointerEvents: "none",
+                  }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val) {
+                      const parts = val.split("-");
+                      if (parts.length === 3) {
+                        onChange(field, `${parts[2]}/${parts[1]}/${parts[0]}`);
+                      }
+                    }
+                  }}
+                />
+              </>
+            )}
+          </div>
         ) : (
           <input
             id={field}
             name={field}
             data-field={field}
             type={
-              type === "date"
-                ? "text"
-                : (field === "UserNPINumber" || field === "PhoneNumber" || field === "HoursPerWeek")
+              (field === "UserNPINumber" || field === "PhoneNumber" || field === "HoursPerWeek")
                 ? "text"
                 : type
             }
             inputMode={
-              type === "date" || field === "UserNPINumber" || field === "PhoneNumber" || field === "HoursPerWeek"
+              field === "UserNPINumber" || field === "PhoneNumber" || field === "HoursPerWeek"
                 ? "numeric"
                 : undefined
             }
@@ -410,9 +505,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
             placeholder={resolvedPlaceholder}
             disabled={disabled}
             value={
-              type === "date"
-                ? formatDisplayDate(value)
-                : isThresholdHoursField && value !== "" && Number(value) < 0
+              isThresholdHoursField && value !== "" && Number(value) < 0
                 ? "0"
                 : value
             }
@@ -442,7 +535,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
                   }
                 : undefined
             }
-            className={`${type === "date" ? "dateInput" : ""} ${type === "date" && Boolean(value && String(value).trim().length > 0) ? "has-value" : ""} ${disabled && (isAdding || isEditing) ? "disabledInput" : ""} formFieldInput${theme.palette.mode === "dark" ? " formFieldInput--dark" : ""}${isThresholdHoursField ? " thresholdHoursInput" : ""}`}
+            className={`${disabled && (isAdding || isEditing) ? "disabledInput" : ""} formFieldInput${theme.palette.mode === "dark" ? " formFieldInput--dark" : ""}${isThresholdHoursField ? " thresholdHoursInput" : ""}`}
           />
         )}
 
