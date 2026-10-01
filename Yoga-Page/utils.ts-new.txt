@@ -126,8 +126,8 @@ export function transformLicenses(
 }
 
 export const mapToApiPayload = (data: any) => ({
-    UserId: data.UserId,
-    OrganizationId: data.OrganizationId,
+    UserId: Number(data.UserId),
+    OrganizationId: Number(data.OrganizationId) || null,
     FirstName: data.FirstName || "",
     LastName: data.LastName || "",
     PrintName: data.PrintName || "",
@@ -140,8 +140,10 @@ export const mapToApiPayload = (data: any) => ({
     FacilityIdOther: data.FacilityIdOther || [],
     FacilityIdApprover: data.FacilityIdApprover || [],
     ApproverOrganizationList: data.ApproverOrganizationList || [],
-    Affiliation: data.Affiliation || 0,
-    Role: data.Role || data.Roles?.filter((r: { IsSelected: any; }) => r.IsSelected).map((r: { Name: any; }) => r.Name) || [],
+    Affiliation: Number(data.Affiliation) || 0,
+    Role: (Array.isArray(data.Role) && data.Role.length > 0)
+        ? data.Role
+        : (data.Roles?.filter((r: { IsSelected: any; }) => r.IsSelected).map((r: { Name: any; }) => r.Name) || []),
     Speciality: data.Speciality || [],
     Specialities: data.Specialities || [],
     DoB: data.DoB || null,
@@ -274,27 +276,37 @@ export const mapToApiPayload = (data: any) => ({
   UserSupplementalMapping: data.UserSupplementalMapping || []
 });
 
-export const mapToAddUserApiPayload = (data: any) => ({
-  FirstName: String(data?.FirstName ?? ""),
-  LastName: String(data?.LastName ?? ""),
-  Email: String(data?.EmailAddress ?? data?.Email ?? ""),
-  PrintName: String(data?.PrintName ?? ""),
-  PhoneNumber: String(data?.PhoneNumber ?? "").replace(/\D/g, ""),
-  Gender: String(data?.Gender ?? ""),
-  AddressLine1: String(data?.AddressLine1 ?? "New York"),
-  AddressLine2: String(data?.AddressLine2 ?? ""),
-  City: String(data?.City ?? ""),
-  State: String(data?.State ?? ""),
-  Zip: String(data?.Zip ?? ""),
-  UserName: String(data?.UserName ?? ""),
-  VendorId: String(data?.VendorId ?? ""),
-  VBATrainId: String(data?.VBATrainId ?? ""),
-  ResidencyStatus: !!data?.ResidencyStatus,
-  UserTypeId: 1,
-  Roles: data?.Roles || [],
-  TenantId: 1,
-  IsEnabled: true,
-  Role: data?.Roles?.filter((r: any) => r.IsSelected).map((r: any) => r.Name) || [],
-});
+export const mapToAddUserApiPayload = (data: any) => {
+  const roles = Array.isArray(data?.Roles) ? data.Roles : [];
+  const selectedRoleNames = Array.isArray(data?.Role) && data.Role.length > 0
+    ? data.Role
+    : roles.filter((r: any) => r?.IsSelected).map((r: any) => r?.Name);
+
+  return {
+    FirstName: String(data?.FirstName ?? "").trim(),
+    LastName: String(data?.LastName ?? "").trim(),
+    Email: String(data?.EmailAddress ?? data?.Email ?? "").trim(),
+    PrintName: String(data?.PrintName ?? "").trim() || [data?.FirstName, data?.LastName].filter(Boolean).join(" "),
+    PhoneNumber: String(data?.PhoneNumber ?? "").replace(/\D/g, ""),
+    Gender: String(data?.Gender ?? ""),
+    AddressLine1: String(data?.AddressLine1 ?? "").trim() || "New York",
+    AddressLine2: String(data?.AddressLine2 ?? ""),
+    City: String(data?.City ?? ""),
+    State: String(data?.State ?? ""),
+    Zip: String(data?.Zip ?? ""),
+    UserName: String(data?.UserName ?? "").trim(),
+    VendorId: String(data?.VendorId ?? ""),
+    VBATrainId: String(data?.VBATrainId ?? ""),
+    ResidencyStatus: !!data?.ResidencyStatus,
+    UserTypeId: Number(data?.UserTypeId || 1),
+    SkillLevel: typeof data?.SkillLevel === "object" && data?.SkillLevel !== null
+      ? Number(data?.SkillLevel?.LookupValueId ?? 0)
+      : Number(data?.SkillLevel ?? 0),
+    TenantId: Number(data?.TenantId || 1),
+    IsEnabled: true,
+    Roles: roles,
+    Role: selectedRoleNames,
+  };
+};
 
 
