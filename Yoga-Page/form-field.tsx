@@ -67,6 +67,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
 
     const effectiveMaxLength = useMemo(() => {
       if (typeof maxLength === "number" && maxLength > 0) return maxLength;
+      if (type === "date") return 10;
       if (field === "PhoneNumber") return 10;
       if (field === "UserNPINumber") return 10;
       if (field === "HoursPerWeek") return 3;
@@ -75,7 +76,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
       if (field === "VBATrainId") return 10;
       if (field === "UserSpecialConsiderations") return 1000;
       return undefined;
-    }, [maxLength, field]);
+    }, [maxLength, field, type]);
 
     const formatDisplayDate = (val: string): string => {
       if (!val) return "";
@@ -92,9 +93,15 @@ const FormField: React.FC<FormFieldProps> = React.memo(
         }
       }
       const slashParts = trimmed.split("/");
-      if (slashParts.length === 3 && slashParts[0].length === 4) {
-        // YYYY/MM/DD -> DD/MM/YYYY
-        return `${slashParts[2].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[0]}`;
+      if (slashParts.length === 3) {
+        if (slashParts[0].length === 4) {
+          // YYYY/MM/DD -> DD/MM/YYYY
+          return `${slashParts[2].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[0]}`;
+        }
+        if (slashParts[2].length === 4) {
+          // DD/MM/YYYY
+          return `${slashParts[0].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[2]}`;
+        }
       }
       const d = new Date(val);
       if (!Number.isNaN(d.getTime())) {
@@ -109,44 +116,6 @@ const FormField: React.FC<FormFieldProps> = React.memo(
       return ["VBATrainID", "VBATrainId", "UserSpecialConsiderations"];
     }, []);
     const hasDateValue = type === "date" && Boolean(value && String(value).trim().length > 0);
-
-    const handleDateStep = useCallback(
-      (delta: 1 | -1) => {
-        const input = inputRef.current;
-        if (!input) return;
-        if (!value) {
-          const today = new Date();
-          const yyyy = today.getFullYear();
-          const mm = String(today.getMonth() + 1).padStart(2, "0");
-          const dd = String(today.getDate()).padStart(2, "0");
-          onChange(field, `${yyyy}-${mm}-${dd}`);
-          return;
-        }
-        try {
-          if (delta > 0) {
-            input.stepUp();
-          } else {
-            input.stepDown();
-          }
-          if (input.value && input.value !== value) {
-            onChange(field, input.value);
-            return;
-          }
-        } catch {
-          // fallback to manual date math below
-        }
-        const [y, m, d] = String(value).split("-").map(Number);
-        if (y && m && d) {
-          const dt = new Date(y, m - 1, d);
-          dt.setDate(dt.getDate() + delta);
-          const nextY = dt.getFullYear();
-          const nextM = String(dt.getMonth() + 1).padStart(2, "0");
-          const nextD = String(dt.getDate()).padStart(2, "0");
-          onChange(field, `${nextY}-${nextM}-${nextD}`);
-        }
-      },
-      [field, onChange, value]
-    );
 
     const inputStyle = useMemo(() => {
       let baseStyle: React.CSSProperties = {
@@ -204,10 +173,6 @@ const FormField: React.FC<FormFieldProps> = React.memo(
         padding: facilityAutoQueue
           ? "8px 10px"
           : (styles.input?.padding as string) || "8px 14px",
-        paddingRight:
-          type === "date" && (isEditing || isAdding)
-            ? "52px"
-            : undefined,
         boxSizing: "border-box",
         width: "100%",
       };
@@ -298,6 +263,21 @@ const FormField: React.FC<FormFieldProps> = React.memo(
 
     const handleInputChange = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (type === "date") {
+          const raw = e.target.value;
+          const digits = raw.replace(/\D/g, "").slice(0, 8);
+          let formatted = "";
+          if (digits.length <= 2) {
+            formatted = digits;
+          } else if (digits.length <= 4) {
+            formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+          } else {
+            formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+          }
+          onChange(field, formatted);
+          return;
+        }
+
         if (isThresholdHoursField) {
           const next = e.target.value;
           if (next === "") {
@@ -329,17 +309,18 @@ const FormField: React.FC<FormFieldProps> = React.memo(
 
         onChange(field, e.target.value);
       },
-      [field, onChange, isThresholdHoursField, effectiveMaxLength]
+      [field, onChange, type, isThresholdHoursField, effectiveMaxLength]
     );
 
     const resolvedPlaceholder = useMemo(() => {
+      if (type === "date") return (isEditing || isAdding) ? (placeholder || "DD/MM/YYYY") : "";
       if (!(isEditing || isAdding)) return "";
       if (placeholder !== undefined && placeholder !== null) return placeholder;
       if (showTypePlaceholder || borderIncludedField.includes(field)) {
         return `Type ${label}`;
       }
       return label;
-    }, [isEditing, isAdding, placeholder, showTypePlaceholder, borderIncludedField, field, label]);
+    }, [isEditing, isAdding, placeholder, showTypePlaceholder, borderIncludedField, field, label, type]);
 
     return (
       <div
@@ -413,14 +394,14 @@ const FormField: React.FC<FormFieldProps> = React.memo(
             name={field}
             data-field={field}
             type={
-              !(isEditing || isAdding) && type === "date"
+              type === "date"
                 ? "text"
                 : (field === "UserNPINumber" || field === "PhoneNumber" || field === "HoursPerWeek")
                 ? "text"
                 : type
             }
             inputMode={
-              field === "UserNPINumber" || field === "PhoneNumber" || field === "HoursPerWeek"
+              type === "date" || field === "UserNPINumber" || field === "PhoneNumber" || field === "HoursPerWeek"
                 ? "numeric"
                 : undefined
             }
@@ -429,7 +410,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
             placeholder={resolvedPlaceholder}
             disabled={disabled}
             value={
-              !(isEditing || isAdding) && type === "date"
+              type === "date"
                 ? formatDisplayDate(value)
                 : isThresholdHoursField && value !== "" && Number(value) < 0
                 ? "0"
