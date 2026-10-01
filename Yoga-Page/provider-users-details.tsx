@@ -165,22 +165,47 @@ const createBottomAccordionState = (expanded: boolean): Record<BottomAccordionKe
 
 const toIsoOrNull = (value: unknown): string | null => {
     if (!value) return null;
-    const date = new Date(String(value));
+    const s = String(value).trim();
+    if (!s) return null;
+    // Check DD/MM/YYYY
+    const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slash) {
+        const dd = Number(slash[1]);
+        const mm = Number(slash[2]);
+        const yyyy = Number(slash[3]);
+        const date = new Date(Date.UTC(yyyy, mm - 1, dd));
+        return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    }
+    // Check YYYY-MM-DD
+    const dash = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (dash) {
+        const yyyy = Number(dash[1]);
+        const mm = Number(dash[2]);
+        const dd = Number(dash[3]);
+        const date = new Date(Date.UTC(yyyy, mm - 1, dd));
+        return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    }
+    const date = new Date(s);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
-/** `<input type="date">` only accepts yyyy-MM-dd; API often sends ISO datetimes. */
+/** Normalize date strings to DD/MM/YYYY for UI display & input. */
 const toDateInputString = (value: unknown): string => {
     if (value == null || value === "") return "";
     const s = String(value).trim();
     if (!s) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
     const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (slash) {
-        const mm = slash[1].padStart(2, "0");
-        const dd = slash[2].padStart(2, "0");
-        return `${slash[3]}-${mm}-${dd}`;
+        const dd = slash[1].padStart(2, "0");
+        const mm = slash[2].padStart(2, "0");
+        return `${dd}/${mm}/${slash[3]}`;
+    }
+    const dash = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (dash) {
+        const yyyy = dash[1];
+        const mm = dash[2].padStart(2, "0");
+        const dd = dash[3].padStart(2, "0");
+        return `${dd}/${mm}/${yyyy}`;
     }
     const t = Date.parse(s);
     if (Number.isNaN(t)) return "";
@@ -188,7 +213,7 @@ const toDateInputString = (value: unknown): string => {
     const y = d.getFullYear();
     const mo = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${mo}-${day}`;
+    return `${day}/${mo}/${y}`;
 };
 
 const toNumberArray = (items: any): number[] => {
@@ -483,9 +508,10 @@ const ProviderUserDetails: React.FC = () => {
 
             if (cfg.field === "PhoneNumber" || cfg.type === "tel") {
                 const str = String(value ?? "").trim();
+                const digits = str.replace(/\D/g, "");
                 if (!str) {
                     error = `${cfg.label} is required`;
-                } else if (!/^\d{10}$/.test(str)) {
+                } else if (digits.length !== 10) {
                     error = "Phone number must be exactly 10 digits";
                 }
                 return error;
@@ -708,9 +734,11 @@ const ProviderUserDetails: React.FC = () => {
             );
 
         const specialityIds = mappedSpecialities.map((s: { Id: number }) => s.Id).filter((id: number) => id > 0);
+        const phoneDigits = String(formData?.PhoneNumber ?? "").replace(/\D/g, "");
 
         const payload = {
             ...formData,
+            PhoneNumber: phoneDigits,
             NpiNumber: String(formData?.UserNPINumber ?? ""),
             EmailAddress: String((formData as any)?.EmailAddress ?? formData?.Email ?? ""),
             Role: roleNames,
@@ -755,7 +783,11 @@ const ProviderUserDetails: React.FC = () => {
 
         try {
             if (isCreate) {
-                const accountPayload: any = mapToAddUserApiPayload({...formData, Roles: selectedRoles});
+                const accountPayload: any = mapToAddUserApiPayload({
+                    ...formData,
+                    PhoneNumber: phoneDigits,
+                    Roles: selectedRoles,
+                });
 
                 const res = await addAccountUser(accountPayload);
                 await addProviderUser(mapToApiPayload({...payload, UserId: res}));
@@ -1722,7 +1754,7 @@ const ProviderUserDetails: React.FC = () => {
                                     styles={styles}
                                     required={true}
                                     maxLength={100}
-                                    placeholder="User Name"
+                                    placeholder="Type User Name"
                                     error={errors.UserName}
                                     isDarkMode={isDarkMode}
                                 />
