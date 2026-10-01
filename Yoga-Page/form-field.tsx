@@ -80,9 +80,28 @@ const FormField: React.FC<FormFieldProps> = React.memo(
     const formatDisplayDate = (val: string): string => {
       if (!val) return "";
       const trimmed = String(val).split("T")[0].trim();
-      const parts = trimmed.split("-");
-      if (parts.length === 3 && parts[0].length === 4) {
-        return `${parts[1]}/${parts[2]}/${parts[0]}`;
+      const dashParts = trimmed.split("-");
+      if (dashParts.length === 3) {
+        if (dashParts[0].length === 4) {
+          // YYYY-MM-DD -> DD/MM/YYYY
+          return `${dashParts[2].padStart(2, "0")}/${dashParts[1].padStart(2, "0")}/${dashParts[0]}`;
+        }
+        if (dashParts[2].length === 4) {
+          // DD-MM-YYYY -> DD/MM/YYYY
+          return `${dashParts[0].padStart(2, "0")}/${dashParts[1].padStart(2, "0")}/${dashParts[2]}`;
+        }
+      }
+      const slashParts = trimmed.split("/");
+      if (slashParts.length === 3 && slashParts[0].length === 4) {
+        // YYYY/MM/DD -> DD/MM/YYYY
+        return `${slashParts[2].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[0]}`;
+      }
+      const d = new Date(val);
+      if (!Number.isNaN(d.getTime())) {
+        const dd = String(d.getDate()).padStart(2, "0");
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
       }
       return val;
     };
