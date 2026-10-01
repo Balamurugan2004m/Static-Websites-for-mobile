@@ -168,11 +168,11 @@ const toIsoOrNull = (value: unknown): string | null => {
     if (!value) return null;
     const s = String(value).trim();
     if (!s) return null;
-    // Check DD/MM/YYYY
+    // Check MM/DD/YYYY
     const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (slash) {
-        const dd = Number(slash[1]);
-        const mm = Number(slash[2]);
+        const mm = Number(slash[1]);
+        const dd = Number(slash[2]);
         const yyyy = Number(slash[3]);
         const date = new Date(Date.UTC(yyyy, mm - 1, dd));
         return Number.isNaN(date.getTime()) ? null : date.toISOString();
@@ -190,23 +190,23 @@ const toIsoOrNull = (value: unknown): string | null => {
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
-/** Normalize date strings to DD/MM/YYYY for UI display & input. */
+/** Normalize date strings to MM/DD/YYYY for UI display & input. */
 const toDateInputString = (value: unknown): string => {
     if (value == null || value === "") return "";
     const s = String(value).trim();
     if (!s) return "";
     const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (slash) {
-        const dd = slash[1].padStart(2, "0");
-        const mm = slash[2].padStart(2, "0");
-        return `${dd}/${mm}/${slash[3]}`;
+        const mm = slash[1].padStart(2, "0");
+        const dd = slash[2].padStart(2, "0");
+        return `${mm}/${dd}/${slash[3]}`;
     }
     const dash = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (dash) {
         const yyyy = dash[1];
         const mm = dash[2].padStart(2, "0");
         const dd = dash[3].padStart(2, "0");
-        return `${dd}/${mm}/${yyyy}`;
+        return `${mm}/${dd}/${yyyy}`;
     }
     const t = Date.parse(s);
     if (Number.isNaN(t)) return "";
@@ -214,7 +214,7 @@ const toDateInputString = (value: unknown): string => {
     const y = d.getFullYear();
     const mo = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
-    return `${day}/${mo}/${y}`;
+    return `${mo}/${day}/${y}`;
 };
 
 const toNumberArray = (items: any): number[] => {
