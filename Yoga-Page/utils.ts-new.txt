@@ -12,7 +12,7 @@ function formatDate(dateStr: string | null): string | null {
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
     const year = date.getFullYear();
-    return `${month}/${day}/${year}`;
+    return `${day}/${month}/${year}`;
 }
 
 export function formatTrainingDates(data: Training[]): Training[] {
@@ -133,7 +133,7 @@ export const mapToApiPayload = (data: any) => ({
     PrintName: data.PrintName || "",
     Gender: data.Gender || "",
     EmailAddress: data.EmailAddress || data.Email || "",
-    PhoneNumber: data.PhoneNumber || "",
+    PhoneNumber: String(data.PhoneNumber || "").replace(/\D/g, ""),
     NpiNumber: data.NpiNumber || data.UserNPINumber || "",
     ProfessionalTitle: data.ProfessionalTitle || "",
     FacilityId: data.FacilityId || [],
@@ -185,7 +185,7 @@ export const mapToApiPayload = (data: any) => ({
   PrintName: data.PrintName || "",
   Gender: data.Gender || "",
   EmailAddress: data.EmailAddress || data.Email || "",
-  PhoneNumber: data.PhoneNumber || "",
+  PhoneNumber: String(data.PhoneNumber || "").replace(/\D/g, ""),
   NpiNumber: data.NpiNumber || data.UserNPINumber || "",
   ProfessionalTitle: data.ProfessionalTitle || "",
   DoB: data.DoB || null,
@@ -279,7 +279,7 @@ export const mapToAddUserApiPayload = (data: any) => ({
   LastName: String(data?.LastName ?? ""),
   Email: String(data?.EmailAddress ?? data?.Email ?? ""),
   PrintName: String(data?.PrintName ?? ""),
-  PhoneNumber: String(data?.PhoneNumber ?? ""),
+  PhoneNumber: String(data?.PhoneNumber ?? "").replace(/\D/g, ""),
   Gender: String(data?.Gender ?? ""),
   AddressLine1: String(data?.AddressLine1 ?? "New York"),
   AddressLine2: String(data?.AddressLine2 ?? ""),
