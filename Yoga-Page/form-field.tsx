@@ -69,7 +69,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
     const effectiveMaxLength = useMemo(() => {
       if (typeof maxLength === "number" && maxLength > 0) return maxLength;
       if (type === "date") return 10;
-      if (field === "PhoneNumber") return 13;
+      if (field === "PhoneNumber") return 10;
       if (field === "UserNPINumber") return 10;
       if (field === "HoursPerWeek") return 3;
       if (field === "VendorId") return 100;
@@ -354,17 +354,14 @@ const FormField: React.FC<FormFieldProps> = React.memo(
     const resolvedPlaceholder = useMemo(() => {
       if (type === "date") return (isEditing || isAdding) ? (placeholder || "DD/MM/YYYY") : "";
       if (!(isEditing || isAdding)) return "";
-      if (field === "PhoneNumber") {
-        return placeholder || "Phone Number";
+      if (placeholder !== undefined && placeholder !== null && placeholder !== "") {
+        return placeholder;
       }
-      const baseText = placeholder !== undefined && placeholder !== null && placeholder !== ""
-        ? placeholder
-        : label;
-      if (baseText.startsWith("Type ")) {
-        return baseText;
+      if (showTypePlaceholder || borderIncludedField.includes(field)) {
+        return `Type ${label}`;
       }
-      return `Type ${baseText}`;
-    }, [isEditing, isAdding, placeholder, field, label, type]);
+      return label;
+    }, [isEditing, isAdding, placeholder, label, type, showTypePlaceholder, borderIncludedField, field]);
 
     return (
       <div
@@ -529,7 +526,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
                 ? "numeric"
                 : undefined
             }
-            maxLength={effectiveMaxLength}
+            maxLength={field === "PhoneNumber" ? 13 : effectiveMaxLength}
             min={isThresholdHoursField ? 0 : undefined}
             placeholder={resolvedPlaceholder}
             disabled={disabled}
@@ -575,7 +572,9 @@ const FormField: React.FC<FormFieldProps> = React.memo(
             <span
               style={{
                 backgroundColor:
-                  String(value ?? "").length >= effectiveMaxLength
+                  (field === "PhoneNumber"
+                    ? String(value ?? "").replace(/\D/g, "").length >= 10
+                    : String(value ?? "").length >= effectiveMaxLength)
                     ? "#d9534f"
                     : "#1f6498",
                 color: "#ffffff",
@@ -589,7 +588,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
                 userSelect: "none",
               }}
             >
-              (Characters {String(value ?? "").length}/{effectiveMaxLength})
+              (Characters {field === "PhoneNumber" ? String(value ?? "").replace(/\D/g, "").length : String(value ?? "").length}/{effectiveMaxLength})
             </span>
           </div>
         )}
