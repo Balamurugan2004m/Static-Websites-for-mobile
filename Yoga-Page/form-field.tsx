@@ -94,19 +94,19 @@ const FormField: React.FC<FormFieldProps> = React.memo(
       if (trimmed.includes("/")) {
         const slashParts = trimmed.split("/");
         if (slashParts.length === 3 && slashParts[0].length === 4) {
-          // YYYY/MM/DD -> DD/MM/YYYY
-          return `${slashParts[2].padStart(2, "0")}/${slashParts[1].padStart(2, "0")}/${slashParts[0]}`;
+          // YYYY/MM/DD -> MM/DD/YYYY
+          return `${slashParts[1].padStart(2, "0")}/${slashParts[2].padStart(2, "0")}/${slashParts[0]}`;
         }
         return trimmed;
       }
       const dashParts = trimmed.split("T")[0].split("-");
       if (dashParts.length === 3) {
         if (dashParts[0].length === 4) {
-          // YYYY-MM-DD -> DD/MM/YYYY
-          return `${dashParts[2].padStart(2, "0")}/${dashParts[1].padStart(2, "0")}/${dashParts[0]}`;
+          // YYYY-MM-DD -> MM/DD/YYYY
+          return `${dashParts[1].padStart(2, "0")}/${dashParts[2].padStart(2, "0")}/${dashParts[0]}`;
         }
         if (dashParts[2].length === 4) {
-          // DD-MM-YYYY -> DD/MM/YYYY
+          // MM-DD-YYYY or DD-MM-YYYY -> MM/DD/YYYY
           return `${dashParts[0].padStart(2, "0")}/${dashParts[1].padStart(2, "0")}/${dashParts[2]}`;
         }
       }
@@ -118,7 +118,8 @@ const FormField: React.FC<FormFieldProps> = React.memo(
       const trimmed = String(val).trim();
       const slashParts = trimmed.split("/");
       if (slashParts.length === 3 && slashParts[2].length === 4) {
-        return `${slashParts[2]}-${slashParts[1].padStart(2, "0")}-${slashParts[0].padStart(2, "0")}`;
+        // MM/DD/YYYY -> YYYY-MM-DD
+        return `${slashParts[2]}-${slashParts[0].padStart(2, "0")}-${slashParts[1].padStart(2, "0")}`;
       }
       const dashParts = trimmed.split("-");
       if (dashParts.length === 3 && dashParts[0].length === 4) {
@@ -352,7 +353,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
     );
 
     const resolvedPlaceholder = useMemo(() => {
-      if (type === "date") return (isEditing || isAdding) ? (placeholder || "DD/MM/YYYY") : "";
+      if (type === "date") return (isEditing || isAdding) ? (placeholder || "MM/DD/YYYY") : "";
       if (!(isEditing || isAdding)) return "";
       if (placeholder !== undefined && placeholder !== null && placeholder !== "") {
         return placeholder;
@@ -503,7 +504,7 @@ const FormField: React.FC<FormFieldProps> = React.memo(
                     if (val) {
                       const parts = val.split("-");
                       if (parts.length === 3) {
-                        onChange(field, `${parts[2]}/${parts[1]}/${parts[0]}`);
+                        onChange(field, `${parts[1]}/${parts[2]}/${parts[0]}`);
                       }
                     }
                   }}
