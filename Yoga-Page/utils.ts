@@ -201,7 +201,8 @@ export const sanitizeLicenses = (
         .map((l: any) => {
             const stateId = resolveStateId(l);
             const licNum = String(l?.UserLicenceNumber ?? "").trim();
-            const status = String(l?.UserLicenceStatus ?? "Active").trim() || "Active";
+            const rawStatus = String(l?.UserLicenceStatus ?? "Active").trim();
+            const status = ["Active", "Inactive", "Intermediate"].includes(rawStatus) ? rawStatus : "Active";
             return {
                 UserNPINumber: String(l?.UserNPINumber || defaultNpi || "").trim(),
                 UserLicenceNumber: licNum,
@@ -339,7 +340,12 @@ export const sanitizeCourses = (courses: any[] = []) => {
 export const mapToApiPayload = (data: any, allStates: any[] = []) => {
     const npi = String(data?.NpiNumber || data?.UserNPINumber || "").trim();
     const userId = Number(data?.UserId || data?.Id || data?.id) || 0;
-    const credStatus = String(data?.CredentialingStatus || "").trim() || "Active";
+    const credStatusRaw = (
+        typeof data?.CredentialingStatus === "object" && data?.CredentialingStatus !== null
+            ? String(data?.CredentialingStatus?.keyValueId ?? data?.CredentialingStatus?.Name ?? data?.CredentialingStatus?.value ?? "")
+            : String(data?.CredentialingStatus || "")
+    ).trim();
+    const credStatus = ["Active", "Inactive", "Intermediate"].includes(credStatusRaw) ? credStatusRaw : "Active";
 
     const roles = (Array.isArray(data?.Role) && data.Role.length > 0)
         ? data.Role
@@ -354,6 +360,15 @@ export const mapToApiPayload = (data: any, allStates: any[] = []) => {
     }));
 
     const specialityIds = specialities.map((s: { Id: number }) => s.Id).filter((id: number) => id > 0);
+
+    const rawAffiliation = Number(
+        data?.Affiliation?.AffiliationTypeId ??
+        data?.Affiliation?.keyValueId ??
+        data?.Affiliation?.value ??
+        data?.Affiliation ??
+        0
+    );
+    const affiliation = Number.isFinite(rawAffiliation) ? rawAffiliation : 0;
 
     return {
         UserId: userId,
@@ -370,7 +385,7 @@ export const mapToApiPayload = (data: any, allStates: any[] = []) => {
         FacilityIdOther: toNumberArray(data?.FacilityIdOther),
         FacilityIdApprover: toNumberArray(data?.FacilityIdApprover),
         ApproverOrganizationList: toNumberArray(data?.ApproverOrganizationList),
-        Affiliation: Number(data?.Affiliation?.AffiliationTypeId ?? data?.Affiliation ?? 0),
+        Affiliation: affiliation,
         Role: roles,
         Speciality: specialityIds.length > 0 ? specialityIds : toNumberArray(data?.Speciality),
         Specialities: specialities,
@@ -388,6 +403,8 @@ export const mapToApiPayload = (data: any, allStates: any[] = []) => {
         Is1151_SME: !!data?.Is1151_SME,
         HoursPerWeek: Number(data?.HoursPerWeek) || 0,
         SchedulingType: toNumberArray(data?.SchedulingType),
+        CreatedDate: toIsoOrNull(data?.CreatedDate) || new Date().toISOString(),
+        CreatedBy: Number(data?.CreatedBy) || 0,
         UserSupplementalMapping: sanitizeSupplementalMapping(data?.UserSupplementalMapping, userId, credStatus),
 
         // arrays (safe defaults)
@@ -409,7 +426,12 @@ export const mapToApiPayload = (data: any, allStates: any[] = []) => {
 export const mapToEditApiPayload = (data: any, allStates: any[] = []) => {
     const npi = String(data?.NpiNumber || data?.UserNPINumber || "").trim();
     const userId = Number(data?.UserId || data?.Id || data?.id) || 0;
-    const credStatus = String(data?.CredentialingStatus || "").trim() || "Active";
+    const credStatusRaw = (
+        typeof data?.CredentialingStatus === "object" && data?.CredentialingStatus !== null
+            ? String(data?.CredentialingStatus?.keyValueId ?? data?.CredentialingStatus?.Name ?? data?.CredentialingStatus?.value ?? "")
+            : String(data?.CredentialingStatus || "")
+    ).trim();
+    const credStatus = ["Active", "Inactive", "Intermediate"].includes(credStatusRaw) ? credStatusRaw : "Active";
 
     const roles = Array.isArray(data?.Role) && data.Role.length > 0
         ? data.Role
@@ -424,6 +446,15 @@ export const mapToEditApiPayload = (data: any, allStates: any[] = []) => {
     }));
 
     const specialityIds = specialities.map((s: { Id: number }) => s.Id).filter((id: number) => id > 0);
+
+    const rawAffiliation = Number(
+        data?.Affiliation?.AffiliationTypeId ??
+        data?.Affiliation?.keyValueId ??
+        data?.Affiliation?.value ??
+        data?.Affiliation ??
+        0
+    );
+    const affiliation = Number.isFinite(rawAffiliation) ? rawAffiliation : 0;
 
     return {
         Id: String(data?.Id || ""),
@@ -450,7 +481,7 @@ export const mapToEditApiPayload = (data: any, allStates: any[] = []) => {
         FacilityIdApprover: toNumberArray(data?.FacilityIdApprover),
         FacilityNPINumber: String(data?.FacilityNPINumber || ""),
         FacilityExternalId: String(data?.FacilityExternalId || ""),
-        Affiliation: Number(data?.Affiliation?.AffiliationTypeId ?? data?.Affiliation ?? 0),
+        Affiliation: affiliation,
         ApproverOrganizationList: toNumberArray(data?.ApproverOrganizationList),
 
         // Roles
@@ -500,8 +531,8 @@ export const mapToEditApiPayload = (data: any, allStates: any[] = []) => {
         HoursPerWeek: Number(data?.HoursPerWeek) || 0,
         SchedulingType: toNumberArray(data?.SchedulingType),
 
-        // Audit
-        CreatedDate: toIsoOrNull(data?.CreatedDate),
+        // Audit - non-nullable in backend C# AddProviderViewModel
+        CreatedDate: toIsoOrNull(data?.CreatedDate) || new Date().toISOString(),
         CreatedBy: Number(data?.CreatedBy) || 0,
 
         // Malpractice
@@ -541,6 +572,12 @@ export const mapToAddUserApiPayload = (data: any) => {
       : Number(data?.SkillLevel ?? 0),
     TenantId: Number(data?.TenantId || 1),
     IsEnabled: true,
+    DoB: toIsoOrNull(data?.DoB),
+    HoursPerWeek: Number(data?.HoursPerWeek) || 0,
+    SchedulingType: toNumberArray(data?.SchedulingType),
+    Malpractice: String(data?.MalPracticeCarrier || data?.Malpractice || "Default"),
+    ExpiryDate: toIsoOrNull(data?.MalPracticeExpiryDate || data?.ExpiryDate),
+    IsCLCW_SME: !!data?.IsCLCW_SME,
     Roles: roles,
     Role: selectedRoleNames,
   };
