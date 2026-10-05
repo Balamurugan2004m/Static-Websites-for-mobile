@@ -1,0 +1,598 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React from "react";
+import SelectField from "./select-filed";
+import PasswordField from "./password-filed";
+import FormField from "./form-field";
+import MultiSelectWithChips from "./multi-select-with-chips";
+import { useTheme } from "@mui/material/styles";
+import { Box, Radio, RadioGroup, FormControlLabel } from "@mui/material";
+import { Specialty } from "../../../services/provider-users";
+import { mapSelectedCodes } from "../utils/provider-facility";
+import { THEME_PRIMITIVES } from "../../../theme";
+
+interface RenderFieldProps {
+  fieldConfig: {
+    label?: string;
+    field: string;
+    type?: string;
+    options?: any[];
+    required?: boolean;
+    maxLength?: number;
+    placeholder?: string;
+  };
+  formData: Record<string, any>;
+  errors?: Record<string, any>;
+  isEditing: boolean;
+  hideMarginBottom?: boolean;
+  styles?: Record<string, any>;
+  clusters?: any[];
+  isDarkMode?: boolean;
+  professionalTitles?: any[];
+  specialties?: Specialty[];
+  schedulingType?: any[];
+  organizations?: any[];
+  states?: any[];
+  lookUpValues?: any[];
+  affiliations?: any[];
+  otherFacilities?: any[];
+  credentialStatuses?: any[];
+  userTypeObjVal?: Record<string, any>;
+  selectOptions?: Record<string, any>;
+  handleChange: (field: string, value: any) => void;
+  passwordResetting?: boolean;
+  setConfirmationModalOpen?: (val: boolean) => void;
+  required: boolean;
+  disabled?: boolean;
+  hideMultiSelectPadding?: boolean;
+  accountUsersForm?: boolean;
+  facilityAutoQueue?: boolean;
+}
+
+const CLUSTER_SELECT_FIELDS = ["ClusterLookupValueMappings", "FacilityClusterId"];
+const ACCOMMODATION_FIELDS = [
+  "FacilityAccommodationLookupValueMappings",
+  "FacilityAccomodationLookupValueMappings",
+];
+
+const toYesNo = (fieldValue: any) =>
+  fieldValue === "Yes" || fieldValue === true ? "Yes" : "No";
+
+const toNullableYesNo = (fieldValue: any) =>
+  fieldValue === "Yes" || fieldValue === true
+    ? "Yes"
+    : fieldValue === "No" || fieldValue === false
+      ? "No"
+      : null;
+
+const RenderField: React.FC<RenderFieldProps> = ({
+  fieldConfig,
+  formData,
+  hideMultiSelectPadding = false,
+  errors = {},
+  isEditing,
+  styles,
+  hideMarginBottom = false,
+  clusters = [],
+  organizations = [],
+  lookUpValues = [],
+  disabled = false,
+  userTypeObjVal = {},
+  selectOptions = {},
+  handleChange,
+  passwordResetting,
+  setConfirmationModalOpen,
+  required = false,
+  accountUsersForm = false,
+  facilityAutoQueue = false,
+}) => {
+  const { field, label, type, options } = fieldConfig;
+  const value = React.useMemo(() => {
+    if (field === "CalendarAdmin" && !formData[field]) {
+      return formData.SelectedFacilityCalAdmin;
+    }
+    return formData[field];
+  }, [field, formData]);
+
+  const selectFieldOptions = React.useMemo(() => {
+    switch (field) {
+      case "FacilityIdentifier":
+        return selectOptions.facilityIdentifiers;
+      case "TimeZone":
+        return selectOptions.timeZoneOptions;
+      case "FacilityState":
+        return selectOptions.states;
+      case "Roles":
+        return formData.Roles?.map((r: any) => r.Name);
+      case "ProfessionalTitle":
+        return selectOptions.professionalTitles;
+      case "credentialStatuses":
+        return selectOptions.credentialStatuses;
+      case "SchedulingType":
+        return selectOptions.schedulingType;
+      case "Affiliation":
+        return selectOptions.affiliations;
+      case "OrganizationId":
+        return selectOptions.organizations || organizations;
+      case "ManagerId":
+        return selectOptions.managers;
+      default:
+        return CLUSTER_SELECT_FIELDS.includes(field)
+          ? selectOptions.clusters
+          : options;
+    }
+  }, [field, formData.Roles, options, organizations, selectOptions]);
+
+  const selectFieldValue = React.useMemo(() => {
+    switch (field) {
+      case "Roles":
+        return formData.Roles?.filter((r: any) => r.IsSelected)?.map(
+          (r: any) => r.Name
+        );
+      case "Priority":
+        return formData.Priority;
+      case "FacilityState":
+        return formData.FacilityState;
+      case "SmartFacility":
+        return toYesNo(formData.SmartFacility);
+      case "IsAutoScheduleAce":
+        return toYesNo(formData.IsAutoScheduleAce);
+      case "IsAutoScheduleTelehealth":
+        return toYesNo(formData.IsAutoScheduleTelehealth);
+      case "IsAutoScheduleInPerson":
+        return toYesNo(formData.IsAutoScheduleInPerson);
+      case "HasInternetConnectivity":
+        return toNullableYesNo(formData.HasInternetConnectivity);
+      case "IsElectronicSubmission":
+        return toNullableYesNo(formData.IsElectronicSubmission);
+      case "FacilityIdentifier":
+        return (
+          selectOptions?.facilityIdentifiers?.find(
+            (e: any) => String(e?.Id) === String(formData.FacilityIdentifier)
+          )?.keyValue || formData.FacilityIdentifier
+        );
+      case "FacilityClusterId":
+        return (
+          selectOptions?.clusters?.find(
+            (e: any) =>
+              String(e?.Id ?? e?.keyValueId) === String(formData.FacilityClusterId)
+          )?.keyValue || formData.FacilityClusterId
+        );
+      case "TimeZone":
+        return (
+          selectOptions?.timeZoneOptions?.find(
+            (e: any) => e?.keyValueId === formData.TimeZone
+          )?.keyValue || formData.TimeZone
+        );
+      case "ClusterLookupValueMappings":
+        return clusters
+          ?.filter((el: any) =>
+            Array.isArray(formData.ClusterLookupValueMappings)
+              ? formData.ClusterLookupValueMappings.includes(el.Id)
+              : false
+          )
+          ?.map((e: any) => e.Id);
+      case "ManagerId":
+        return formData.ManagerName;
+      case "SkillLevel":
+        return lookUpValues.find(
+          (el: any) => el.LookupValueId === formData.SkillLevel
+        )?.Description;
+      case "OrganizationId": {
+        const organizationId = formData.OrganizationId;
+        if (organizationId == null || organizationId === "" || organizationId === 0 || organizationId === "0") return "";
+        return String(organizationId);
+      }
+      case "Affiliation": {
+        const affiliation = formData.Affiliation;
+        if (affiliation == null || affiliation === "" || affiliation === 0 || affiliation === "0") return "";
+        if (typeof affiliation === "object" && affiliation?.AffiliationTypeId) {
+          return String(affiliation.AffiliationTypeId);
+        }
+        return String(affiliation);
+      }
+      case "UserTypeId":
+        return userTypeObjVal[formData.UserTypeId as keyof typeof userTypeObjVal];
+      default:
+        return value as string;
+    }
+  }, [clusters, field, formData, lookUpValues, selectOptions, userTypeObjVal, value]);
+
+  const multiSelectOptions = React.useMemo(() => {
+    switch (field) {
+      case "FacilityId":
+        return selectOptions?.facility;
+      case "Specialities":
+        return selectOptions?.specialties;
+      case "SchedulingType":
+        return selectOptions?.schedulingType;
+      case "FacilityIdOther":
+      case "FacilityIdApprover":
+        return selectOptions?.otherFacilities?.length
+          ? selectOptions.otherFacilities
+          : selectOptions?.facility;
+      case "ApproverOrganizationList":
+        return selectOptions?.approverOrganizations ?? selectOptions?.organizationsMapped;
+      case "UserSupplementalMapping":
+        return selectOptions?.supplementalDbqs ?? [];
+      case "FacilityIdentifier":
+        return selectOptions?.facilityIdentifiers;
+      case "CalendarAdmin":
+        return selectOptions?.calenderAdministrators;
+      case "CPTCodeList":
+        return selectOptions?.diagnosticClaims;
+      case "SelectedClinicalManagers":
+        return selectOptions?.clinicalManagers;
+      default:
+        return ACCOMMODATION_FIELDS.includes(field)
+          ? selectOptions?.accommodations
+          : options || [];
+    }
+  }, [field, options, selectOptions]);
+
+  const multiSelectValue = React.useMemo(() => {
+    if (ACCOMMODATION_FIELDS.includes(field)) {
+      return (
+        selectOptions?.accommodations?.filter((opt: any) => {
+          if (Array.isArray(value)) {
+            if (typeof value[0] === "string") {
+              return value.includes(opt.label);
+            }
+            if (typeof value[0] === "object") {
+              return value.some((v: any) => v.label === opt.label);
+            }
+          }
+          return false;
+        }) || []
+      );
+    }
+
+    if (field === "CalendarAdmin") {
+      return mapSelectedCodes(
+        Array.isArray(value) ? value : [],
+        selectOptions?.calenderAdministrators
+      );
+    }
+
+    if (field === "CPTCodeList") {
+      return mapSelectedCodes(
+        Array.isArray(value) ? value : [],
+        selectOptions?.diagnosticClaims
+      );
+    }
+
+    if (field === "SelectedClinicalManagers") {
+      return mapSelectedCodes(
+        Array.isArray(value) ? value : [],
+        selectOptions?.clinicalManagers
+      );
+    }
+
+    if (
+      field === "FacilityId" ||
+      field === "FacilityIdOther" ||
+      field === "FacilityIdApprover" ||
+      field === "Specialities" ||
+      field === "SchedulingType" ||
+      field === "ApproverOrganizationList" ||
+      field === "UserSupplementalMapping"
+    ) {
+      return mapSelectedCodes(
+        Array.isArray(value) ? value : [],
+        multiSelectOptions || []
+      );
+    }
+
+    return Array.isArray(value) ? value : [];
+  }, [field, multiSelectOptions, selectOptions, value]);
+
+  const theme = useTheme();
+  const P = THEME_PRIMITIVES;
+
+  if (type === "radio") {
+    const radioOptions = options?.length ? options : ["Yes", "No"];
+    const radioValue =
+      field === "HasInternetConnectivity" || field === "IsElectronicSubmission"
+        ? toNullableYesNo(formData[field]) ?? ""
+        : value != null && value !== ""
+          ? String(value)
+          : "";
+    const radioMuted = theme.custom?.colors?.labelMuted ?? P.labelMuted;
+    const radioPrimary = theme.palette.primary.main;
+    const radioUnchecked =
+      theme.palette.mode === "dark"
+        ? P.selectBorderDark
+        : P.emptyInputBorderLight;
+
+    return (
+      <div
+        style={{
+          ...styles?.formGroup,
+          display: "flex",
+          flexDirection: "column",
+          marginBottom: hideMarginBottom
+            ? 0
+            : (styles?.formGroup?.marginBottom ?? 24),
+          width: "100%",
+        }}
+        data-testid={`input-${field}`}
+      >
+        {label ? (
+          <Box display="flex" gap="3px" sx={{ mb: "10px" }}>
+            <span
+              style={{
+                fontSize: "14px",
+                fontWeight: 400,
+                color: theme.palette.mode === "dark" ? P.white : P.black,
+                ...(styles?.label || {}),
+                marginBottom: 0,
+              }}
+            >
+              {label}{" "}
+            </span>
+            {required ? (
+              <span style={{ color: P.dangerText }}>*</span>
+            ) : null}
+          </Box>
+        ) : null}
+        <RadioGroup
+          row
+          value={radioValue}
+          onChange={(e) => {
+            if (!isEditing || disabled) return;
+            handleChange(field, e.target.value);
+          }}
+          sx={{
+            gap: "8px",
+            flexWrap: "nowrap",
+            "& .MuiFormControlLabel-root": { mr: 0, ml: 0 },
+            "& .MuiFormControlLabel-label": {
+              fontSize: "14px",
+              fontWeight: 400,
+              color: theme.palette.mode === "dark" ? P.white : P.black,
+            },
+            "& .MuiRadio-root": {
+              p: "4px",
+              color: radioUnchecked,
+              "&.Mui-checked": {
+                color: isEditing && !disabled ? radioPrimary : radioMuted,
+              },
+              "&.Mui-disabled": {
+                color: radioUnchecked,
+                opacity: 1,
+              },
+              "&.Mui-disabled.Mui-checked": {
+                color: `${radioMuted} !important`,
+                opacity: 1,
+              },
+            },
+            "& .MuiFormControlLabel-root.Mui-disabled": {
+              opacity: 1,
+            },
+          }}
+        >
+          {radioOptions.map((opt: string) => (
+            <FormControlLabel
+              key={String(opt)}
+              value={opt}
+              control={<Radio size="small" />}
+              label={opt}
+              disabled={!isEditing || !!disabled}
+            />
+          ))}
+        </RadioGroup>
+        {errors[field] ? (
+          <Box
+            component="span"
+            sx={{
+              color: P.dangerText,
+              fontSize: "12px",
+              mt: "4px",
+            }}
+          >
+            {errors[field]}
+          </Box>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (type === "select") {
+    return (
+      <SelectField
+        key={field}
+        disabled={disabled ?? false}
+        data-testid={`input-${field}`}
+        isMulti={field === "ClusterLookupValueMappings"}
+        label={label}
+        field={field}
+        options={selectFieldOptions}
+        value={selectFieldValue}
+        isEditing={isEditing}
+        onChange={handleChange}
+        styles={styles}
+        formData={{ ...formData }}
+        required={required}
+        error={errors[field]}
+        accountUsersForm={accountUsersForm}
+        facilityAutoQueue={facilityAutoQueue}
+        placeholder={fieldConfig.placeholder}
+        handleFormChange={
+          handleChange as (field: string, value: string | string[]) => void
+        }
+      />
+    );
+  }
+
+  if (type === "multiSelect") {
+    const showRequired = required && isEditing;
+    const isCptCodesField = field === "CPTCodeList";
+    const isClinicalManagerField = field === "SelectedClinicalManagers";
+    const multiSelectVariant = isCptCodesField
+      ? "cptCodes"
+      : isClinicalManagerField
+        ? "clinicalManager"
+        : "default";
+
+    if (accountUsersForm && !isEditing && !isCptCodesField) {
+      const display = (multiSelectValue || [])
+        .map((v: any) => v?.label ?? "")
+        .filter(Boolean)
+        .join(", ");
+
+      return (
+        <div
+          style={{
+            ...styles?.formGroup,
+            display: "flex",
+            flexDirection: "column",
+            marginBottom: hideMarginBottom ? 0 : (styles?.formGroup?.marginBottom ?? 12),
+            width: "100%",
+          }}
+        >
+          {label ? (
+            <Box display="flex" gap="3px" sx={{ mb: "10px" }}>
+              <span style={{ ...styles?.label, marginBottom: 0 }}>{label} </span>
+              {showRequired ? (
+                <span style={{ color: theme.palette.error.main }}>*</span>
+              ) : required && accountUsersForm ? (
+                <span style={{ color: THEME_PRIMITIVES.dangerText }}>*</span>
+              ) : null}
+            </Box>
+          ) : null}
+          <Box sx={{ width: "100%" }}>
+            <div
+              data-testid={`view-${field}`}
+              style={{
+                fontSize: "14px",
+                fontWeight: 400,
+                lineHeight: "normal",
+                minHeight: "17px",
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                ...(styles?.inputReadOnly || {}),
+              }}
+            >
+              {display}
+            </div>
+          </Box>
+        </div>
+      );
+    }
+
+    return (
+      <Box
+        sx={{
+          ...(accountUsersForm || isCptCodesField
+            ? {
+                display: "flex",
+                flexDirection: "column",
+                width: "100%",
+                marginBottom: hideMarginBottom
+                  ? 0
+                  : `${styles?.formGroup?.marginBottom ?? 14}px`,
+                marginTop: 0,
+              }
+            : {
+                marginTop: hideMultiSelectPadding ? "0px" : "20px",
+                marginBottom: hideMarginBottom ? "0px" : "20px",
+              }),
+        }}
+      >
+        { label ? (
+          <Box
+            display="flex"
+            gap="3px"
+            component="label"
+            htmlFor={field}
+            sx={{ mb: accountUsersForm ? "10px" : "4px" }}
+          >
+            <span
+              style={{
+                fontSize: "14px",
+                fontWeight: accountUsersForm ? undefined : 500,
+                color: theme.palette.text.primary,
+                ...(styles?.label || {}),
+                marginBottom: 0,
+              }}
+            >
+              {label}{" "}
+            </span>
+            {showRequired && (
+              <span style={{ color: THEME_PRIMITIVES.dangerText }}>*</span>
+            )}
+          </Box>
+        ) : null}
+        <MultiSelectWithChips
+          options={multiSelectOptions}
+          value={multiSelectValue}
+          onChange={(newValue) => handleChange(field, newValue)}
+          placeholder={
+            fieldConfig.placeholder ||
+            (isCptCodesField
+              ? "Select CPT Codes"
+              : isClinicalManagerField
+                ? "Select Clinical Manager"
+              : field === "FacilityIdApprover"
+                ? "Selected Facilities"
+                : field === "ApproverOrganizationList"
+                  ? "Selected Organizations"
+                  : `Select ${label}`)
+          }
+          styles={styles}
+          isDark={!!styles?.isDark}
+          disabled={!isEditing}
+          isFormField={true}
+          variant={multiSelectVariant}
+          error={errors[field]}
+          chipLabelMaxLength={
+            field === "FacilityId" ||
+            field === "FacilityIdOther" ||
+            field === "FacilityIdApprover"
+              ? 40
+              : undefined
+          }
+        />
+      </Box>
+    );
+  }
+
+  if (type === "password") {
+    return (
+      <PasswordField
+        key={field}
+        value="******"
+        isEditing={isEditing}
+        onChange={handleChange}
+        styles={styles}
+        required={required}
+        passwordResetting={passwordResetting}
+        onResetPasswordClick={() => setConfirmationModalOpen?.(true)}
+        error={errors[field]}
+      />
+    );
+  }
+
+  return (
+    <FormField
+      key={field}
+      data-testid={`input-${field}`}
+      label={label ?? ""}
+      field={field}
+      type={type || "text"}
+      value={value != null && value !== "" ? String(value) : ""}
+      isEditing={isEditing}
+      onChange={handleChange}
+      hideMarginBottom={hideMarginBottom}
+      styles={styles}
+      disabled={disabled ?? false}
+      error={errors[field]}
+      required={required}
+      facilityAutoQueue={facilityAutoQueue}
+      maxLength={fieldConfig.maxLength}
+      placeholder={fieldConfig.placeholder}
+    />
+  );
+};
+
+export default RenderField;
