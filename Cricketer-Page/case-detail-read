@@ -1,0 +1,1204 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Box, Skeleton } from "@mui/material";
+import type { Theme } from "@mui/material";
+import { DbqVaro } from "../../../services/case-details";
+import type {
+    FormDataType,
+    SidebarType,
+    UIType,
+    AlertsInfo,
+} from "./case-details";
+import Typography from "@mui/material/Typography";
+import ConfirmationModal from "../../../ui/confirmation-modal";
+import { useState, useMemo } from "react";
+import BlockRoundedIcon from "@mui/icons-material/BlockRounded";
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import { Button } from "../../../ui/button";
+import Done from "../../../assets/icons/done.svg";
+import ArmyImg from "../../../assets/Army.svg";
+import AirForceImg from "../../../assets/AirForce.svg";
+import CoastGuardImg from "../../../assets/coastguard.svg";
+import MarineImg from "../../../assets/marinecorps.svg";
+import NavyImg from "../../../assets/Navy.svg";
+import { useAuth } from "../../../contexts/AuthContext";
+import { CLAIMS, ACCESS } from "../../../constants/auth";
+import { THEME_PRIMITIVES } from "../../../theme";
+import ContentionCancellationAction from "../narratives/contention-cancellation-action";
+const P = THEME_PRIMITIVES;
+
+type Props = {
+    theme: Theme;
+    isDark: boolean;
+    UI: UIType;
+    profileUrl: string | null;
+    formData: FormDataType;
+    eodDate: string;
+    radDate: string;
+    branchOfService: string;
+    sidebar: SidebarType;
+    varo: DbqVaro;
+    veteranAccommodations: string;
+    alerts?: AlertsInfo;
+    headerTitle: string;
+    caseId: string;
+    examSchedulingRequestId: string;
+    isVip: boolean;
+    onEsrReviewedClick: () => void;
+    onAcceptClick: () => void;
+    onEditClick: () => void;
+    onRegisterWelcomeEmail: () => Promise<void>;
+    acceptVisibilityLoaded: boolean;
+    canAcceptCase: boolean;
+    prioritySpecialIssues: { contentionName: string; specialIssue: string;}[];
+    accepting: boolean;
+};
+
+const fmtAddress = (o?: {
+    addressLine1?: string;
+    addressLine2?: string;
+    addressLine3?: string;
+}) => {
+    if (!o) return "";
+    const full = [o.addressLine1, o.addressLine2, o.addressLine3]
+        .filter(Boolean)
+        .join(", ");
+    if (!full) return "";
+    const parts = full.split(",");
+    if (parts.length <= 1) return full;
+    const last = parts.pop()!.trim();
+    const first = parts.join(",");
+    return `${first},\n${last}`;
+};
+
+const splitFirstTimestamp = (line: string | null) => {
+    if (!line) return null;
+    const idx = line.search(/\d/);
+    if (idx <= 0) return null;
+    const head = line.slice(0, idx).trimEnd();
+    const tail = line.slice(idx).trim();
+    return { head, tail };
+};
+
+const noHover = (bg?: string, color?: string, borderColor?: string) => ({
+    "&:hover": {
+        backgroundColor: bg ?? "inherit",
+        color: color ?? "inherit",
+        borderColor: borderColor ?? "inherit",
+        boxShadow: "none",
+        opacity: 1,
+    },
+});
+
+export default function CaseDetailsRead({
+    theme,
+    isDark,
+    UI,
+    profileUrl,
+    formData,
+    eodDate,
+    radDate,
+    branchOfService,
+    sidebar,
+    varo,
+    veteranAccommodations,
+    alerts,
+    headerTitle,
+    caseId,
+    examSchedulingRequestId,
+    isVip,
+    onEsrReviewedClick,
+    onAcceptClick,
+    onEditClick,
+    onRegisterWelcomeEmail,
+    acceptVisibilityLoaded,
+    canAcceptCase,
+    prioritySpecialIssues,
+    accepting,
+}: Props) {
+    const commAlt =
+        (formData.communication as any)?.alternatePhoneNumber ??
+        (formData.communication as any)?.alternatePhone ??
+        (formData.communication as any)?.alternate ??
+        "";
+
+    const resAlt =
+        (formData.residency as any)?.alternatePhoneNumber ??
+        (formData.residency as any)?.alternatePhone ??
+        (formData.residency as any)?.alternate ??
+        "";
+
+    const [registeredOpen, setRegisteredOpen] = useState(false);
+    const hasEmail = useMemo(
+        () => Boolean(formData?.communication?.email),
+        [formData?.communication?.email]
+    );
+
+    const veteranAccList = useMemo(() => {
+        if (!veteranAccommodations) return [];
+        return veteranAccommodations
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+    }, [veteranAccommodations]);
+
+    const hasVeteranAcc = veteranAccList.length > 0;
+
+    const getBranchImg = (branch?: string | null) => {
+        const val = (branch || "").toLowerCase();
+        if (val.includes("air")) return AirForceImg;
+        if (val.includes("coast")) return CoastGuardImg;
+        if (val.includes("marine")) return MarineImg;
+        if (val.includes("navy")) return NavyImg;
+        if (val.includes("army")) return ArmyImg;
+        return null;
+    };
+
+    const toScale = (v: number) => ({ xs: v, md: v, xl: v } as const);
+    const bodySize = Number(theme.typography.body1.fontSize) || 14;
+    const titleSize = Number(theme.typography.h6.fontSize) || 16;
+    const labelSize = Number(theme.typography.subtitle2.fontSize) || 14;
+    const FS = toScale(bodySize);
+    const LABEL_FS = toScale(labelSize);
+    const cardBg = isDark ? P.gridHeaderDark  : P.gridHeaderLight;
+    const cardBorderColor = isDark ? P.inputBgDark: P.stroke;
+    const sectionHeaderSx = { color: isDark ? P.white : theme.palette.text.primary, fontSize: toScale(titleSize), fontWeight: 700 } as const;
+    const labelSx = { color: isDark ? P.white : P.labelMuted, fontSize: LABEL_FS, fontWeight: 400, mb: 0.6 } as const;
+    const valueSx = {
+        color:isDark ? P.white : P.black,
+        fontSize: FS,
+        fontWeight: 400,
+        lineHeight: 1.5,
+        whiteSpace: "pre-wrap" as const,
+        wordBreak: "break-word" as const,
+        overflowWrap: "anywhere" as const,
+        
+        
+    };
+    const paperBg = theme.palette.background.paper;
+    const dividerColor = theme.palette.divider;
+    const neutral100 = theme.palette.grey[100];
+    const primaryColor = isDark ? P.secondaryAccentBlue : theme.palette.primary.main;
+    const errorColor = isDark ? P.selectedPreferrencesOnDark: theme.palette.error.main;
+    const ALERT_LH = { xs: 1.35, md: 1.4, xl: 1.45 } as const;
+    const esrReviewedVariant = theme.custom?.buttons.variants.esrReviewed;
+    const vipBadge = isVip ? (
+        <Box
+            sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: 48,
+                height: 24,
+                px: 1.5,
+                borderRadius: "3px",
+                backgroundColor: P.vipBadgeBg,
+                color: P.vipBadgeText,
+                fontSize: 14,
+                fontWeight: 700,
+                lineHeight: 1,
+                whiteSpace: "nowrap",
+            }}
+        >
+            VIP
+        </Box>
+    ) : null;
+
+    const waiverLine = alerts?.waiver ?? null;
+    const smsLine = alerts?.sms ?? null;
+    const telehealthLine = alerts?.telehealth ?? null;
+    const excessMileageLine = alerts?.excessMileage ?? null;
+    const waiverSplit = splitFirstTimestamp(waiverLine);
+    const cardRadius = 10;
+
+    const commonCardSx = {
+        backgroundColor: cardBg,
+        borderRadius: `${cardRadius}px`,
+        border: `1px solid ${cardBorderColor}`,
+        boxShadow: "none",
+        p: { xs: 1.5, sm: 2, md: 2.5 },
+        width: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+    } as const;
+
+    const actionButtonSx = {
+        height: 32,
+        borderRadius: "10px",
+        textTransform: "none",
+        fontSize: 14,
+        fontWeight: 400,
+        px: 1.25,
+        minWidth: "48px",
+        whiteSpace: "nowrap",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+    } as const;
+
+    const consentTextSx = {
+        fontSize: LABEL_FS,
+        fontWeight: 400,
+        lineHeight: ALERT_LH,
+        color: theme.palette.text.primary,
+    } as const;
+
+    const sectionUnderline = (
+        <Box
+            sx={{
+                borderBottom: `1px solid ${cardBorderColor}`,
+                mt: 0.75,
+                mb: { xs: 1.5, md: 2 },
+                mx: { xs: -2, md: -2.5 },
+            }}
+        />
+    );
+
+    const waiverText = waiverSplit ? (
+        <>
+            {waiverSplit.head}
+            <Box component="span" sx={{ display: "block" }}>
+                {waiverSplit.tail}
+            </Box>
+        </>
+    ) : waiverLine ? (
+        waiverLine
+    ) : (
+        <>
+            Veteran has{" "}
+            <Box component="span" sx={{ color: errorColor, fontWeight: 700 }}>
+                not indicated
+            </Box>{" "}
+            preference for 3 day appointment waiver.
+        </>
+    );
+
+    const smsText = smsLine ? (
+        smsLine
+    ) : (
+        <>
+            Veteran has{" "}
+            <Box component="span" sx={{ color: errorColor, fontWeight: 700 }}>
+                not indicated
+            </Box>{" "}
+            SMS Opt preferences.
+        </>
+    );
+
+    const telehealthText = telehealthLine ? (
+        telehealthLine
+    ) : (
+        <>
+            Veteran has{" "}
+            <Box component="span" sx={{ color: errorColor, fontWeight: 700 }}>
+                not indicated
+            </Box>{" "}
+            consent to telehealth.
+        </>
+    );
+
+    const excessMileageText = excessMileageLine ? (
+        excessMileageLine
+    ) : (
+        <>
+            <BlockRoundedIcon
+                fontSize="small"
+                sx={{ color: errorColor, mr: 0.75 }}
+            />
+            <Box component="span">
+                Veteran{" "}
+                <Box component="span" sx={{ color: errorColor, fontWeight: 800 }}>
+                    DECLINED
+                </Box>{" "}
+                Consent to excess mileage.
+            </Box>
+        </>
+    );
+
+    const claimColumns = [
+        {
+            key: "col-1",
+            items: [
+                { label: "Requesting VARO", value: varo.requestingVaro || "" },
+                { label: "PoaVso Name", value: varo.poaVsoName || "" },
+            ],
+        },
+        {
+            key: "col-2",
+            items: [
+                { label: "Claim Date", value: (varo as any).claimDate || "" },
+                { label: "Claim Type", value: (varo as any).claimType || "" },
+            ],
+        },
+        {
+            key: "col-3",
+            items: [
+                {
+                    label: "Product Code",
+                    value: (varo as any).productCode || "",
+                },
+                { label: "Payee Code", value: (varo as any).payeeCode || "" },
+            ],
+        },
+        {
+            key: "col-4",
+            items: [
+                {
+                    label: "Claim Information",
+                    value: (varo as any).claimInformation || "",
+                },
+                {
+                    label: "Program Type",
+                    value: (varo as any).programType || "",
+                },
+            ],
+        },
+    ];
+
+    const { hasClaim } = useAuth();
+    const showEditButton = hasClaim(CLAIMS.canEditCaseDetails, ACCESS.ALLOWED);
+    const showAcceptButton = acceptVisibilityLoaded && canAcceptCase;
+    const footerActions = [
+        {
+            label: "ESR Reviewed",
+            icon: (
+                <Box
+                    component="img"
+                    src={Done}
+                    alt=""
+                    sx={{ width: { xs: 12, sm: 14 }, height: { xs: 12, sm: 14 } }}
+                />
+            ),
+            bg: esrReviewedVariant?.bg ?? P.esrReviewedButtonBg,
+            color: esrReviewedVariant?.color ?? theme.palette.common.white,
+            hoverBg: esrReviewedVariant?.hoverBg ?? P.esrReviewedButtonHover,
+            borderRadius: esrReviewedVariant?.radius ?? 10,
+            paddingX: 1.25,
+            onClick: onEsrReviewedClick,
+        },
+        ...(showAcceptButton
+            ? [
+                  {
+                      label: accepting ? "..." : "Accept",
+                      icon: (
+                          <Box
+                              component="img"
+                              src={Done}
+                              alt=""
+                              sx={{ width: { xs: 13, sm: 15 }, height: { xs: 13, sm: 15 } }}
+                          />
+                      ),
+                      bg: isDark ? P.drawerFocusedBorderLight : P.primary,
+                      color: theme.palette.common.white,
+                      borderRadius: 10,
+                      paddingX: 1.25,
+                      minWidth: 69,
+                      onClick: accepting ? undefined : onAcceptClick,
+                  },
+              ]
+            : []),
+    ];
+
+    return (
+        <>
+            <Box
+                sx={{
+                    width: "100%",
+                    mx: 0,
+                    maxWidth: "100%",
+                    px: 0,
+                    py: { xs: 1.5, md: 2 },
+                }}
+            >
+                    <Box
+                        sx={{
+                            ...commonCardSx,
+                            minHeight: { lg: 378 },
+                            mb: { xs: 2, md: 3 },
+                        }}
+                    >
+                    <Box
+                        sx={{
+                            display: "flex",
+                            flexDirection: { xs: "column", sm: "row" },
+                            justifyContent: "space-between",
+                            alignItems: { xs: "flex-start", sm: "center" },
+                            gap: { xs: 1.5, sm: 1 },
+                            mb: 2,
+                            borderBottom: `1px solid ${
+                                isDark ? P.inputBgDark : UI.divider
+                            }`,
+                            pb: 1,
+                            mx: { xs: -2, md: -2.5 },
+                            px: { xs: 2, md: 2.5 },
+                        }}
+                    >
+                        <Box sx={{ display: "inline-flex", alignItems: "center", gap: 1, minWidth: 0, flexWrap: "wrap" }}>
+                            <Typography
+                                variant="h6"
+                                sx={{
+                                    color: theme.palette.text.primary,
+                                    fontSize: 16,
+                                    fontWeight: 700,
+                                    width: "auto",
+                                    minWidth: 0,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    flexWrap: "wrap",
+                                    wordBreak: "break-word",
+                                }}
+                                title={`Case ID: ${caseId}`}
+                            >
+                                {headerTitle}
+                            </Typography>
+                            {vipBadge}
+                        </Box>
+
+                        <Box sx={{ display: "flex", gap: { xs: 0.75, sm: 1 }, flexWrap: "wrap", width: { xs: "100%", sm: "auto" }, justifyContent: { xs: "flex-start", sm: "flex-end" } }}>
+                            {showEditButton && (
+                            <Button
+                                variant="primary"
+                                sx={{
+                                    ...actionButtonSx,
+                                    backgroundColor: isDark ? P.drawerFocusedBorderLight : P.primary,
+                                    color: theme.palette.common.white,
+                                    ...noHover(
+                                        isDark ? P.primaryOverlayStrong : P.primaryHover,
+                                        theme.palette.common.white
+                                    ),
+                                }}
+                                onClick={onEditClick}
+                            >
+                                Edit
+                            </Button>
+                            )}
+                        </Box>
+                    </Box>
+
+                    <Box
+                        sx={{
+                            display: "grid",
+                            backgroundColor: isDark ? P.gridHeaderDark : cardBg,
+                            gridTemplateColumns: {
+                                xs: "1fr",
+                                sm: "repeat(2, minmax(0, 1fr))",
+                                lg: "minmax(0, 1.4fr) minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 1.8fr)",
+                            },
+                            gap: { xs: 1.5, sm: 2, md: 3 },
+                        }}
+                    >
+                        <Box
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: {
+                                    xs: "100px 1fr",
+                                    md: "143px 1fr",
+                                },
+                                columnGap: 2,
+                                alignItems: "start",
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    width: { xs: 100, md: 143 },
+                                    height: { xs: 130, md: 187 },
+                                    borderRadius: `${cardRadius}px`,
+                                    overflow: "hidden",
+                                }}
+                            >
+                                {profileUrl || getBranchImg(branchOfService) ? (
+                                    <Box
+                                        component="img"
+                                        src={profileUrl || getBranchImg(branchOfService) || undefined}
+                                        alt="Branch Logo"
+                                        sx={{
+                                            width: "100%",
+                                            height: "100%",
+                                            objectFit: "contain",
+                                            display: "block",
+                                        }}
+                                    />
+                                ) : (
+                                    <Skeleton
+                                        variant="rectangular"
+                                        width="100%"
+                                        height="100%"
+                                        sx={{ borderRadius: `${cardRadius}px` }}
+                                        animation="wave"
+                                    />
+                                )}
+                            </Box>
+
+                            <Box>
+                                <Box sx={{ mb: 1 }}>
+                                    <Typography sx={labelSx}>File Number</Typography>
+                                    <Typography sx={valueSx}>{formData.fileNumber || ""}</Typography>
+                                </Box>
+
+                                <Box sx={{ mb: 1 }}>
+                                    <Typography sx={labelSx}>Date of Birth</Typography>
+                                    <Typography sx={valueSx}>{formData.dateOfBirth || ""}</Typography>
+                                </Box>
+
+                                <Box sx={{ mb: 1 }}>
+                                    <Typography sx={labelSx}>Pregnancy Indicator</Typography>
+                                    <Typography sx={valueSx}>{formData.pregnancyIndicator ?? ""}</Typography>
+                                </Box>
+
+                                <Box>
+                                    <Typography sx={labelSx}>Status</Typography>
+                                    <Typography sx={valueSx}>
+                                        {(formData as any).status || sidebar.caseStatus || ""}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+
+                        <Box>
+                            <Box sx={{ mb: 1.2 }}>
+                                <Typography sx={labelSx}>Calculated DOR:</Typography>
+                                <Typography  sx={{...valueSx,whiteSpace: "nowrap",}}>{sidebar.calculatedDor || ""}</Typography>
+                            </Box>
+
+                            <Box sx={{ mb: 1.2 }}>
+                                <Typography sx={labelSx}>Original DOR:</Typography>
+                                <Typography  sx={{ ...valueSx, whiteSpace: "nowrap",}}>{sidebar.originalDor || ""}</Typography>
+                            </Box>
+
+                            <Box>
+                                <Typography sx={labelSx}>Contract:</Typography>
+                                <Typography sx={valueSx}>{sidebar.contract || ""}</Typography>
+                            </Box>
+                        </Box>
+
+                        <Box sx={{ pl: { xs: 0, lg: 1.5 } }}>
+                            <Box sx={{ mb: 1.2 }}>
+                                <Typography sx={labelSx}>Case Complexity:</Typography>
+                                <Typography sx={valueSx}>{sidebar.caseComplexity || ""}</Typography>
+                            </Box>
+
+                            <Box sx={{ mb: 1.2 }}>
+                                <Typography sx={labelSx}>Days:</Typography>
+                                <Typography variant="body2" sx={{ ...valueSx, color: (() => {
+                                            const daysNum = parseFloat(sidebar.days);
+                                            if (!sidebar.days || isNaN(daysNum)) return theme.palette.text.primary; 
+                                            if (daysNum < 2) return isDark ? P.caseAgeLowDark : P.caseAgeLowLight;   
+                                            if (daysNum < 12) return isDark ? P.caseAgeMediumDark : P.caseAgeMediumLight;  
+                                            return isDark ? P.selectedPreferrencesOnDark : P.errorText; 
+                                })(), }}>
+                                    {sidebar.days || ""}
+                                </Typography>
+                            </Box>
+
+                            <Box>
+                                <Typography sx={labelSx}>Sensitivity Level:</Typography>
+                                <Typography sx={valueSx}>{sidebar.sensitivityLevel || ""}</Typography>
+                            </Box>
+                        </Box>
+
+                        <Box>
+                            <Box
+                                sx={{
+                                    mt: 0.2,
+                                    mb: { xs: 1.2, md: 1.6 },
+                                }}
+                            >
+                                <Typography sx={consentTextSx}>{waiverText}</Typography>
+                            </Box>
+
+                            <Box sx={{ mb: { xs: 1.2, md: 1.6 } }}>
+                                <Typography sx={consentTextSx}>{smsText}</Typography>
+                            </Box>
+
+                            <Box sx={{ mb: { xs: 1.2, md: 1.6 } }}>
+                                <Typography sx={consentTextSx}>{telehealthText}</Typography>
+                            </Box>
+
+                            <Box
+                                sx={{
+                                    mb: { xs: 1.2, md: 1.6 },
+                                    display: "flex",
+                                    alignItems: "center",
+                                }}
+                            >
+                                <Typography
+                                    sx={{
+                                        ...consentTextSx,
+                                        display: "flex",
+                                        alignItems: "center",
+                                    }}
+                                >
+                                    {excessMileageText}
+                                </Typography>
+                            </Box>
+
+                            <Typography
+                                sx={{
+                                    color: primaryColor,
+                                    fontSize: { xs: 13, sm: FS.xs },
+                                    textDecoration: "underline",
+                                    cursor: hasEmail ? "pointer" : "default",
+                                    wordBreak: "break-word",
+                                }}
+                                onClick={() => {
+                                    if (hasEmail) setRegisteredOpen(true);
+                                }}
+                            >
+                                Register and Send Welcome Email or SMS
+                            </Typography>
+                        </Box>
+                    </Box>
+                </Box>
+
+                <Box
+                    sx={{
+                        display: "grid",
+                        gridTemplateColumns: {
+                            xs: "1fr",
+                            lg: "minmax(0, 2.35fr) minmax(0, 0.95fr)",
+                        },
+                        gap: { xs: 2, md: 3 },
+                        alignItems: "flex-start",
+                    }}
+                    >
+                        <Box
+                            sx={{
+                                display: "flex",
+                                flexDirection: "column",
+                            gap: { xs: 2, md: 3 },
+                        }}
+                    >
+                        <Box sx={commonCardSx}>
+                            <Typography variant="h6" sx={sectionHeaderSx}>
+                               Demographic and Contact Information
+                            </Typography>
+                            {sectionUnderline}
+
+                            <Box
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: {
+                                    xs: "1fr",
+                                    md: "1fr 1fr",
+                                },
+                                columnGap: { xs: 2, md: 3 },
+                                rowGap: { xs: 2, md: 2.5 },
+                                minHeight: { lg: 316 },
+                            }}
+                            >
+                                    <Typography variant="subtitle2" sx={{ color: isDark ? P.white : theme.palette.text.primary, fontSize: LABEL_FS, fontWeight: 700 }}>
+                                        Communication
+                                    </Typography>
+                                    <Typography variant="subtitle2" sx={{ color: isDark ? P.white : theme.palette.text.primary, fontSize: LABEL_FS, fontWeight: 700 }}>
+                                        Residency
+                                    </Typography>
+
+                                <Box>
+                                    <Typography sx={labelSx}>Address</Typography>
+                                    <Typography sx={valueSx}>
+                                        {fmtAddress(formData.communication) || ""}
+                                    </Typography>
+                                </Box>
+                                <Box>
+                                    <Typography sx={labelSx}>Address</Typography>
+                                    <Typography sx={valueSx}>
+                                        {fmtAddress(formData.residency) || ""}
+                                    </Typography>
+                                </Box>
+
+                                <Box>
+                                    <Typography sx={labelSx}>Email</Typography>
+                                    <Typography sx={valueSx}>
+                                        {formData.communication?.email || ""}
+                                    </Typography>
+                                </Box>
+                                <Box>
+                                    <Typography sx={labelSx}>Email</Typography>
+                                    <Typography sx={valueSx}>
+                                        {formData.residency?.email || ""}
+                                    </Typography>
+                                </Box>
+
+                                <Box>
+                                    <Typography sx={labelSx}>Primary Phone</Typography>
+                                    <Typography sx={valueSx}>
+                                        {formData.communication?.phoneNumber || ""}
+                                    </Typography>
+                                </Box>
+                                <Box>
+                                    <Typography sx={labelSx}>Primary Phone</Typography>
+                                    <Typography sx={valueSx}>
+                                        {formData.residency?.phoneNumber || ""}
+                                    </Typography>
+                                </Box>
+
+                                <Box>
+                                    <Typography sx={labelSx}>Alternate Phone</Typography>
+                                    <Typography sx={valueSx}>{commAlt}</Typography>
+                                </Box>
+                                <Box>
+                                    <Typography sx={labelSx}>Alternate Phone</Typography>
+                                    <Typography sx={valueSx}>{resAlt}</Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+
+                        <Box sx={commonCardSx}>
+                            <Typography variant="h6" sx={sectionHeaderSx}>
+                                Claim Information
+                            </Typography>
+                            {sectionUnderline}
+
+                            <Box
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: {
+                                        xs: "1fr",
+                                        sm: "repeat(2, minmax(0, 1fr))",
+                                        md: "repeat(4, 1fr)",
+                                    },
+                                    columnGap: { xs: 0, md: 0 },
+                                    rowGap: { xs: 1.6, md: 0 },
+                                    minHeight: { lg: 131 },
+                                }}
+                            >
+                                {claimColumns.map((col, colIndex) => (
+                                    <Box
+                                        key={col.key}
+                                        sx={{
+                                            borderRight: {
+                                                xs: "none",
+                                                md:
+                                                colIndex ===
+                                                        claimColumns.length - 1
+                                                        ? "none"
+                                                        : `1px solid ${cardBorderColor}`,
+                                            },
+                                            borderBottom: {
+                                                xs: colIndex < claimColumns.length - 1 ? `1px solid ${cardBorderColor}` : "none",
+                                                sm: colIndex < 2 ? `1px solid ${cardBorderColor}` : "none",
+                                                md: "none",
+                                            },
+                                            px: { xs: 0, md: 2 },
+                                            pb: { xs: 1.5, md: 0 },
+                                        }}
+                                    >
+                                        {col.items.map((item) => (
+                                            <Box
+                                                key={item.label}
+                                                sx={{ mb: 1.5 }}
+                                            >
+                                                <Typography sx={labelSx}>
+                                                    {item.label}
+                                                </Typography>
+                                                <Typography sx={valueSx}>
+                                                    {item.value}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                ))}
+                            </Box>
+                        </Box>
+
+                        <Box sx={{ ...commonCardSx, p: 0, overflow: "hidden" }}>
+                            <Typography variant="h6" sx={{ ...sectionHeaderSx, px: { xs: 2, md: 2.5 }, pt: { xs: 2, md: 2.25 } }}>
+                                Periods Of Service
+                            </Typography>
+                            {sectionUnderline}
+                            <Box
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: {
+                                        xs: "repeat(2, minmax(0, 1fr))",
+                                        md: "minmax(0, 1.4fr) minmax(0, 1.6fr) minmax(0, 1.6fr) minmax(0, 1.2fr)",
+                                    },
+                                    px: { xs: 2, md: 2.5 },
+                                    py: 1.2,
+                                    backgroundColor: cardBg,
+                                    borderBottom: `1px solid ${cardBorderColor}`,
+                                }}
+                            >
+                                <Box
+                                    sx={{
+                                        borderRight: {
+                                            xs: "none",
+                                            md: `1px solid ${cardBorderColor}`,
+                                        },
+                                        pr: { xs: 2, md: 2 },
+                                    }}
+                                >
+                                    <Typography
+                                        sx={{
+                                            ...labelSx,
+                                            mb: 0,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        Branch of Service
+                                    </Typography>
+                                </Box>
+                                <Box
+                                    sx={{
+                                        borderRight: {
+                                            xs: "none",
+                                            md: `1px solid ${cardBorderColor}`,
+                                        },
+                                        px: { xs: 2, md: 2 },
+                                    }}
+                                >
+                                    <Typography
+                                        sx={{
+                                            ...labelSx,
+                                            mb: 0,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        Entry On Duty (EOD)
+                                    </Typography>
+                                </Box>
+                                <Box
+                                    sx={{
+                                        borderRight: {
+                                            xs: "none",
+                                            md: `1px solid ${cardBorderColor}`,
+                                        },
+                                        px: { xs: 2, md: 2 },
+                                    }}
+                                >
+                                    <Typography
+                                        sx={{
+                                            ...labelSx,
+                                            mb: 0,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        RAD Date
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ pl: { xs: 2, md: 2 } }}>
+                                    <Typography
+                                        sx={{
+                                            ...labelSx,
+                                            mb: 0,
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        Era
+                                    </Typography>
+                                </Box>
+                            </Box>
+
+                            <Box
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: {
+                                        xs: "repeat(2, minmax(0, 1fr))",
+                                        md: "minmax(0, 1.4fr) minmax(0, 1.6fr) minmax(0, 1.6fr) minmax(0, 1.2fr)",
+                                    },
+                                    px: { xs: 2, md: 2.5 },
+                                    py: 1.5,
+                                    backgroundColor: isDark ? P.black:theme.palette.background.paper,
+                                    color: theme.palette.text.primary,
+                                }}
+                            >
+                                <Box
+                                    sx={{
+                                        borderRight: {
+                                            xs: "none",
+                                            md: `1px solid ${cardBorderColor}`,
+                                        },
+                                        pr: { xs: 2, md: 2 },
+                                    }}
+                                >
+                                    <Typography sx={valueSx}>
+                                        {branchOfService || ""}
+                                    </Typography>
+                                </Box>
+                                <Box
+                                    sx={{
+                                        borderRight: {
+                                            xs: "none",
+                                            md: `1px solid ${cardBorderColor}`,
+                                        },
+                                        px: { xs: 2, md: 2 },
+                                    }}
+                                >
+                                    <Typography sx={valueSx}>
+                                        {eodDate || ""}
+                                    </Typography>
+                                </Box>
+                                <Box
+                                    sx={{
+                                        borderRight: {
+                                            xs: "none",
+                                            md: `1px solid ${cardBorderColor}`,
+                                        },
+                                        px: { xs: 2, md: 2 },
+                                    }}
+                                >
+                                    <Typography sx={valueSx}>
+                                        {radDate || ""}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ pl: { xs: 2, md: 2 } }}>
+                                    <Typography sx={valueSx}>
+                                        {(formData as any)?.era || ""}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+                        <Box sx={{ ...commonCardSx, p: 0, overflow: "hidden" }}>
+                        <Typography
+                            variant="h6"
+                            sx={{
+                                ...sectionHeaderSx,
+                                px: { xs: 2, md: 2.5 },
+                                pt: { xs: 2, md: 2.25 },
+                            }}
+                        >
+                            Prioritization Special Issues
+                        </Typography>
+
+                        {sectionUnderline}
+
+                        <Box
+                            sx={{
+                                display: "grid",
+                                gridTemplateColumns: {
+                                    xs: "repeat(2, minmax(0, 1fr))",
+                                    md: "1fr 1fr",
+                                },
+                                px: { xs: 2, md: 2.5 },
+                                py: 1.2,
+                                backgroundColor: cardBg,
+                                borderBottom: `1px solid ${cardBorderColor}`,
+                            }}
+                        >
+                            <Typography
+                                sx={{
+                                    ...labelSx,
+                                    mb: 0,
+                                    fontWeight: 600,
+                                }}
+                            >
+                                Contention Name
+                            </Typography>
+
+                            <Typography
+                                sx={{
+                                    ...labelSx,
+                                    mb: 0,
+                                    fontWeight: 600,
+                                }}
+                            >
+                                Special Issue
+                            </Typography>
+                        </Box>
+
+                        {prioritySpecialIssues.map((item, index) => (
+                            <Box
+                                key={index}
+                                sx={{
+                                    display: "grid",
+                                    gridTemplateColumns: {
+                                        xs: "repeat(2, minmax(0, 1fr))",
+                                        md: "1fr 1fr",
+                                    },
+                                    px: { xs: 2, md: 2.5 },
+                                    py: 1.5,
+                                    backgroundColor: isDark
+                                        ? P.black
+                                        : theme.palette.background.paper,
+                                }}
+                            >
+                                <Typography sx={valueSx}>
+                                    {item.contentionName}
+                                </Typography>
+
+                                <Typography sx={valueSx}>
+                                    {item.specialIssue}
+                                </Typography>
+                            </Box>
+                        ))}
+                    </Box>
+                    </Box>
+                    
+
+                    <Box
+                        sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: { xs: 2, md: 3 },
+                        }}
+                    >
+                        <Box sx={{ ...commonCardSx, minHeight: { lg: 157 } }}>
+                            <Typography variant="h6" sx={sectionHeaderSx}>
+                                Accommodations
+                            </Typography>
+                            {sectionUnderline}
+
+                            <Typography sx={labelSx}>
+                                Veteran Accommodations
+                            </Typography>
+
+                            <Box
+                                sx={{
+                                    mt: 0.5,
+                                    position: "relative",
+                                    borderRadius: "5px",
+                                    border: `1px solid ${dividerColor}`,
+                                    backgroundColor: isDark ? P.gridHeaderDark : paperBg,
+                                    width: { xs: "100%", sm: 215 },
+                                    maxWidth: "100%",
+                                    height: 32,
+                                    px: 1.5,
+                                    display: "flex",
+                                    alignItems: "center",
+                                }}
+                            >
+                                <Box
+                                    sx={{
+                                        color: UI.labelColor,
+                                        fontSize: FS,
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        pr: 3,
+                                    }}
+                                >
+                                    Veteran Accommodations
+                                </Box>
+                                <KeyboardArrowDownRoundedIcon
+                                    sx={{
+                                        position: "absolute",
+                                        right: 8,
+                                        top: "50%",
+                                        transform: "translateY(-50%)",
+                                        fontSize: 18,
+                                        color: theme.palette.text.secondary,
+                                    }}
+                                />
+                            </Box>
+
+                            {hasVeteranAcc && (
+                                <Box
+                                    sx={{
+                                        mt: 0.75,
+                                        borderRadius: "5px",
+                                        border: `1px solid ${dividerColor}`,
+                                        backgroundColor: isDark ? P.gridHeaderDark : paperBg,
+                                        width: { xs: "100%", sm: 215 },
+                                        maxWidth: "100%",
+                                        px: 1.5,
+                                        py: 0.75,
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 0.75,
+                                    }}
+                                >
+                                    {veteranAccList.map((item) => (
+                                        <Box
+                                            key={item}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "space-between",
+                                                backgroundColor: neutral100,
+                                                borderRadius: "5px",
+                                                px: 1,
+                                                py: 0.5,
+                                                minHeight: 24,
+                                                boxSizing: "border-box",
+                                            }}
+                                        >
+                                            <Typography
+                                                sx={{
+                                                    fontSize: 12,
+                                                    lineHeight: 1.3,
+                                                    color: theme.palette.text.primary,
+                                                    wordBreak: "break-word",
+                                                    overflowWrap: "anywhere",
+                                                    mr: 1,
+                                                }}
+                                            >
+                                                {item}
+                                            </Typography>
+                                            <CheckRoundedIcon
+                                                sx={{
+                                                    fontSize: 16,
+                                                    flexShrink: 0,
+                                                    color: theme.palette.grey[700],
+                                                }}
+                                            />
+                                        </Box>
+                                    ))}
+                                </Box>
+                            )}
+                        </Box>
+
+                        <Box sx={{ ...commonCardSx, minHeight: { lg: 350 } }}>
+                            <Typography variant="h6" sx={sectionHeaderSx}>
+                                Additional Information
+                            </Typography>
+                            {sectionUnderline}
+
+                            <Box sx={{ mb: 2.5 }}>
+                                <Typography sx={labelSx}>
+                                    ESR Address
+                                </Typography>
+                                <Typography sx={valueSx}>
+                                    {fmtAddress(formData.residency) || ""}
+                                </Typography>
+                            </Box>
+
+                            <Box sx={{ mb: 2.5 }}>
+                                <Typography sx={labelSx}>
+                                    Phone Number
+                                </Typography>
+                                <Typography sx={valueSx}>
+                                    {formData.residency?.phoneNumber || ""}
+                                </Typography>
+                            </Box>
+
+                            <Box sx={{ mb: 2.5 }}>
+                                <Typography sx={labelSx}>
+                                    Alternate Phone Number
+                                </Typography>
+                                <Typography sx={valueSx}>
+                                    {resAlt}
+                                </Typography>
+                            </Box>
+
+                            <Box>
+                                <Typography sx={labelSx}>
+                                    Email Address
+                                </Typography>
+                                <Typography sx={valueSx}>
+                                    {formData.residency?.email || ""}
+                                </Typography>
+                            </Box>
+                        </Box>
+                    </Box>
+                </Box>
+            </Box>
+            <ContentionCancellationAction
+                examSchedulingRequestId={examSchedulingRequestId}
+                extraActions={footerActions}
+            />
+
+            <ConfirmationModal
+                open={registeredOpen}
+                onClose={() => setRegisteredOpen(false)}
+                title="Alert!"
+                description="Email Account is already registered. If this is a problem, please contact IT Administrator."
+                confirmLabel="OK"
+                onConfirm={async () => {
+                    await onRegisterWelcomeEmail();
+                    setRegisteredOpen(false);
+                }}
+                isDarkMode={isDark}
+            />
+        </>
+    );
+}
