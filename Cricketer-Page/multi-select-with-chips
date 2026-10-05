@@ -1,0 +1,404 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { forwardRef, useMemo } from "react";
+import { Autocomplete, TextField, Chip, Paper, PaperProps } from "@mui/material";
+import CancelIcon from "@mui/icons-material/Cancel";
+import { useTheme } from "@mui/material/styles";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import { THEME_PRIMITIVES } from "../../../theme";
+import CancelDarkMode from "../../../assets/Cancel-Dark-Mode.svg";
+import { fieldErrorTextStyle } from "../utils/style-tokens";
+
+// 🔹 Generic Option Type
+export interface SelectOption {
+  code: string | number;
+  label: string;
+  highlighted?: boolean;
+}
+
+const CHIP_LABEL_MAX_LENGTH = 22;
+
+const truncateChipLabel = (label: string, maxLength = CHIP_LABEL_MAX_LENGTH): string => {
+  const text = String(label ?? "");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+};
+
+const AutocompletePaper = forwardRef<HTMLDivElement, PaperProps>(
+  function AutocompletePaper(props, ref) {
+    const theme = useTheme();
+    const P = THEME_PRIMITIVES;
+    return (
+      <Paper
+        {...props}
+        ref={ref}
+        elevation={8}
+        sx={{
+          ...props.sx,
+          backgroundColor:
+            theme.palette.mode === "dark" ? P.inputBgDark : P.white,
+        }}
+      />
+    );
+  }
+);
+
+interface MultiSelectWithChipsProps<T extends SelectOption> {
+  options: T[];
+  value: T[];
+  onChange: (value: T[]) => void;
+  onOpen?: () => void;
+  placeholder?: string;
+  width?: number | string;
+  disabled?: boolean;
+  styles?: any;
+  isDark?: boolean;
+  isFormField?: boolean;
+  error?: string;
+  chipLabelMaxLength?: number;
+  variant?: "default" | "cptCodes" | "clinicalManager";
+  loading?: boolean;
+}
+
+export default function MultiSelectWithChips<T extends SelectOption>({
+  options,
+  value,
+  onChange,
+  onOpen,
+  placeholder = "Select...",
+  width = "100%",
+  disabled = false,
+  error = "",
+  isFormField = false,
+  chipLabelMaxLength = CHIP_LABEL_MAX_LENGTH,
+  variant = "default",
+  loading = false,
+}: MultiSelectWithChipsProps<T>) {
+  const theme = useTheme();
+  const P = THEME_PRIMITIVES;
+  const selected = Array.isArray(value) ? value : [];
+  const isCptCodes = variant === "cptCodes";
+  const isClinicalManager = variant === "clinicalManager";
+  const isFacilityChips = isCptCodes || isClinicalManager;
+  const mergedOptions = useMemo(() => {
+    const selectedValues = Array.isArray(value) ? value : [];
+    const byCode = new Map((options ?? []).map((option) => [String(option.code), option] as const));
+    selectedValues.forEach((option) => {
+      const key = String(option.code);
+      if (!byCode.has(key)) byCode.set(key, option);
+    });
+    return Array.from(byCode.values());
+  }, [options, value]);
+  const chipMaxLength = isFacilityChips ? Number.MAX_SAFE_INTEGER : chipLabelMaxLength;
+  const borderColor = isFacilityChips
+    ? P.emptyInputBorderLight
+    : P.labelMuted;
+
+  return (
+    <>
+      <Autocomplete
+        multiple
+        disableCloseOnSelect
+        disabled={disabled}
+        loading={loading}
+        loadingText="Loading…"
+        onOpen={onOpen}
+        options={mergedOptions}
+        value={selected}
+        onChange={(_, newValue) => onChange(newValue ?? [])}
+        getOptionLabel={(option) => String(option?.label ?? "")}
+        isOptionEqualToValue={(option, val) =>
+          String(option?.code) === String(val?.code)
+        }
+        limitTags={-1}
+        PaperComponent={AutocompletePaper}
+        popupIcon={
+          <KeyboardArrowDownIcon
+            sx={{
+              fontSize: isFacilityChips ? 20 : 24,
+              color:
+                theme.palette.mode === "dark"
+                  ? P.selectBorderDark
+                  : P.labelMuted,
+            }}
+          />
+        }
+        clearIcon={isFacilityChips ? null : <CancelIcon fontSize="small" />}
+        disableClearable={isFacilityChips}
+        slotProps={{
+          popper: {
+            sx: {
+              zIndex: 1600,
+              "& .MuiAutocomplete-option": {
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? P.inputBgDark
+                    : theme.palette.common.white,
+                color:
+                  theme.palette.mode === "dark"
+                    ? theme.palette.common.white
+                    : P.black,
+              },
+              "& .MuiAutocomplete-option[aria-selected='true']": {
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? P.gridHeaderDark
+                    : theme.custom?.buttons?.variants?.view.bg,
+              },
+              "& .MuiAutocomplete-option:hover": {
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? P.gridHeaderDark
+                    : theme.custom?.buttons?.variants?.view.bg,
+              },
+            },
+          },
+        }}
+        renderOption={(props, option) => (
+          <li
+            {...props}
+            key={String(option.code)}
+            style={{
+              ...(props.style || {}),
+              fontWeight: option.highlighted ? 600 : undefined,
+              backgroundColor: option.highlighted
+                ? theme.palette.mode === "dark"
+                  ? P.inputBgDark
+                  : P.sidebarSelectedBg
+                : props.style?.backgroundColor,
+            }}
+          >
+            {option.label}
+          </li>
+        )}
+        renderTags={(selectedOptions: readonly T[], getTagProps) =>
+          selectedOptions.map((option: T, index: number) => {
+            const { key, ...chipProps } = getTagProps({ index });
+            const fullLabel = option.label ?? "";
+            const isHighlighted = Boolean(option.highlighted);
+            return (
+              <Chip
+                key={key}
+                label={truncateChipLabel(fullLabel, chipMaxLength)}
+                {...chipProps}
+                size="small"
+                deleteIcon={
+                  theme.palette.mode === "dark" ? (
+                    <img
+                      src={CancelDarkMode}
+                      alt="delete"
+                      style={{
+                        width: isFacilityChips ? 20 : 14,
+                        height: isFacilityChips ? 20 : 14,
+                      }}
+                    />
+                  ) : (
+                    <CancelIcon sx={{ fontSize: isFacilityChips ? 20 : 14 }} />
+                  )
+                }
+                sx={
+                  isFacilityChips
+                    ? {
+                        height: "auto",
+                        minHeight: 29,
+                        maxWidth: "100%",
+                        borderRadius: "5px",
+                        p: "6px",
+                        gap: 0,
+                        backgroundColor: isHighlighted
+                          ? theme.palette.mode === "dark"
+                            ? `${isCptCodes ? P.secondaryElevatedDark : P.inputBgDark} !important`
+                            : `${P.sidebarSelectedBg} !important`
+                          : theme.palette.mode === "dark"
+                            ? `${isCptCodes ? P.secondaryElevatedDark : P.inputBgDark} !important`
+                            : `${P.stroke} !important`,
+                        "& .MuiChip-label": {
+                          display: "block",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          fontSize: 14,
+                          fontWeight: isHighlighted ? 600 : 400,
+                          lineHeight: "17px",
+                          color:
+                            theme.palette.mode === "dark" ? P.white : P.black,
+                          px: 0,
+                          py: 0,
+                        },
+                        "& .MuiChip-deleteIcon": {
+                          width: 20,
+                          height: 20,
+                          marginRight: 0,
+                          marginLeft: "2px",
+                          color: P.labelMuted,
+                          opacity: 1,
+                        },
+                        "&.Mui-disabled": {
+                          opacity: 1,
+                        },
+                      }
+                    : {
+                        height: 22,
+                        maxWidth: 140,
+                        backgroundColor:
+                          theme.palette.mode === "dark"
+                            ? `${P.inputBgDark} !important`
+                            : `${P.inputBorderLightSoft} !important`,
+                        "& .MuiChip-label": {
+                          display: "block",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          fontSize: 12,
+                          px: 0.75,
+                        },
+                        "& .MuiChip-deleteIcon": {
+                          width: 14,
+                          height: 14,
+                          marginRight: "4px",
+                        },
+                      }
+                }
+                title={fullLabel}
+              />
+            );
+          })
+        }
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            placeholder={selected.length === 0 ? placeholder : ""}
+            variant="outlined"
+            size="small"
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                minHeight: isFacilityChips ? 45 : 32,
+                height: "auto",
+                borderRadius: "10px",
+                flexWrap: "wrap",
+                alignItems: "center",
+                alignContent: "center",
+                gap: isFacilityChips ? "8px" : "4px",
+                paddingTop: isFacilityChips ? "8px !important" : "4px !important",
+                paddingBottom: isFacilityChips ? "8px !important" : "4px !important",
+                paddingLeft: "14px !important",
+                paddingRight: isFacilityChips ? "40px !important" : "32px !important",
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? `${isFormField || isCptCodes ? P.secondaryElevatedDark : P.gridHeaderDark} !important`
+                    : isFacilityChips || isFormField
+                      ? `${P.white} !important`
+                      : `${P.gridHeaderLight}`,
+                border: `1px solid ${
+                  theme.palette.mode === "dark"
+                    ? `${P.selectBorderDark} !important`
+                    : `${borderColor} !important`
+                }`,
+                "&:hover": {
+                  borderColor:
+                    theme.palette.mode === "dark"
+                      ? P.selectBorderDark
+                      : borderColor,
+                },
+                "&.Mui-focused": {
+                  boxShadow: "none",
+                  outline: "none",
+                  borderColor:
+                    theme.palette.mode === "dark"
+                      ? P.white
+                      : isFacilityChips
+                        ? P.primary
+                        : P.labelMuted,
+                },
+                "&.Mui-disabled": {
+                  opacity: 1,
+                  borderColor:
+                    theme.palette.mode === "dark"
+                      ? P.selectBorderDark
+                      : borderColor,
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? `${isFormField || isCptCodes ? P.secondaryElevatedDark : P.gridHeaderDark} !important`
+                      : `${P.white} !important`,
+                },
+              },
+              "& .MuiOutlinedInput-notchedOutline": {
+                border: "none",
+              },
+              "& .MuiOutlinedInput-root.MuiInputBase-sizeSmall": {
+                paddingTop: isFacilityChips ? "8px !important" : "4px !important",
+                paddingBottom: isFacilityChips ? "8px !important" : "4px !important",
+                paddingLeft: "14px !important",
+                paddingRight: isFacilityChips ? "40px !important" : "32px !important",
+              },
+              "& .MuiAutocomplete-inputRoot": {
+                flexWrap: "wrap !important",
+              },
+              "& .MuiAutocomplete-tag": {
+                margin: 0,
+              },
+              "& .MuiInputBase-input": {
+                fontSize: "14px",
+                fontWeight: 400,
+                color:
+                  theme.palette.mode === "dark"
+                    ? theme.palette.text.primary
+                    : P.black,
+                padding: "0 !important",
+                minWidth: "40px !important",
+                height: isFacilityChips ? "17px" : "22px",
+              },
+              "& .MuiInputBase-input.Mui-disabled": {
+                WebkitTextFillColor:
+                  theme.palette.mode === "dark" ? P.white : P.black,
+                opacity: 1,
+              },
+              "& .MuiInputBase-input::placeholder": {
+                color:
+                  theme.palette.mode === "dark" ? P.labelMuted : "#757575",
+                opacity: 1,
+              },
+              "& .MuiAutocomplete-clearIndicator": {
+                padding: "2px",
+              },
+              "& .MuiAutocomplete-endAdornment": {
+                right: isFacilityChips ? 12 : 6,
+                top: "50%",
+                transform: "translateY(-50%)",
+              },
+              "& .MuiAutocomplete-popupIndicator": {
+                padding: "2px",
+                marginRight: 0,
+              },
+              "& .MuiAutocomplete-popupIndicator.Mui-disabled": {
+                opacity: 1,
+                color:
+                  theme.palette.mode === "dark"
+                    ? P.selectBorderDark
+                    : P.labelMuted,
+              },
+            }}
+          />
+        )}
+        sx={{
+          width,
+          ...((isFormField || isFacilityChips) && {
+            minHeight: isFacilityChips ? 45 : 32,
+          }),
+          "& .MuiAutocomplete-endAdornment": {
+            top: "50%",
+            transform: "translateY(-50%)",
+          },
+          ...(isFacilityChips && {
+            "&.Mui-disabled": { opacity: 1 },
+            "& .MuiChip-root": { opacity: 1 },
+          }),
+        }}
+      />
+      {error && (
+        <div style={fieldErrorTextStyle(theme.palette.error.main)}>
+          {error}
+        </div>
+      )}
+    </>
+  );
+}
