@@ -5,7 +5,8 @@ import { useSelector } from "react-redux";
 import { showToast } from "../../utils/toast";
 import { TOAST_TYPES } from "../../types/toast-types";
 
-import { RootState } from "../../store";
+import { RootState, useAppDispatch } from "../../store";
+import { addSpecialAccommodation, fetchSpecialAccommodations } from "../../store/slice/provider-facility-slice";
 import ContentBox from "../../layouts/content-box";
 import PageTitleChip from "../../components/page-title-chip";
 import { THEME_PRIMITIVES } from "../../theme";
@@ -20,6 +21,7 @@ const P = THEME_PRIMITIVES;
 
 const AccommodationConfigAdd = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const mode = useSelector((state: RootState) => state.theme.mode);
   const isDarkMode = mode === "dark";
 
@@ -65,6 +67,8 @@ const AccommodationConfigAdd = () => {
     setSaving(true);
     try {
       await addAccommodation(trimmedName, description.trim());
+      dispatch(addSpecialAccommodation({ Name: trimmedName, Description: description.trim() }));
+      dispatch(fetchSpecialAccommodations() as any);
       showToast(
         "The new record has been created and saved.",
         TOAST_TYPES.SUCCESS,
