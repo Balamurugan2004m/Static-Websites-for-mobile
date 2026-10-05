@@ -1,0 +1,1136 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
+import {
+  Box,
+  IconButton,
+  Typography,
+  useTheme,
+  Tooltip,
+} from "@mui/material";
+import { useNavigate } from "react-router";
+import { shallowEqual, useDispatch, useSelector } from "react-redux";
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import { showToast } from "../../utils/toast";
+import { TOAST_TYPES } from "../../types/toast-types";
+
+import { RootState } from "../../store";
+import { getStyles } from "../../components/users/utils/styles";
+import HeaderWithEditActions from "../../components/users/components/header-with-edit-actions";
+import RefreshIcon from "../../assets/icons/refresh.svg"; 
+
+import RenderField from "../../components/users/components/render-field";
+import OfficeHoursGrid, { OfficeHoursGridRef } from "../../components/facility/office-hours-grid";
+import AccordionComponent from "../../components/users/components/accordion";
+import CptCode, { CptCodeRef } from "./cpt-code";
+
+import {
+    buildFacilityPayload,
+  cptCodeFields,
+  facilityContactLeft,
+  facilityContactRight,
+  facilityRemarks,
+  generalInformationFields,
+  leftColumnFields,
+  rightColumnSelectFields,
+  timeZoneOptions,
+} from "../../components/users/utils/provider-facility";
+
+import { fetchProviderFacilityData, fetchSpecialAccommodations } from "../../store/slice/provider-facility-slice";
+import {
+    addFacility,
+  FacilityResponse,
+  INITIAL_FACILITY_RESPONSE,
+} from "../../services/provider-facilities";
+import { ConfirmationModal } from "../../ui";
+import FacilityFormSkeleton from "./facility-form-skeleton";
+import { THEME_PRIMITIVES } from "../../theme";
+
+/** -------------------------
+ *  Regex constants
+ * ------------------------- */
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^[+]?[1-9][\d]{0,15}$/;
+const ACCORDION_KEYS = {
+  hoursOfOperation: "hoursOfOperation",
+  generalInformation: "generalInformation",
+  cptCodes: "cptCodes",
+  facilityRemarks: "facilityRemarks",
+  cptCodeRanges: "cptCodeRanges",
+  facilityContact: "facilityContact",
+} as const;
+
+const createDefaultAccordions = (expanded = true) => ({
+  [ACCORDION_KEYS.hoursOfOperation]: expanded,
+  [ACCORDION_KEYS.generalInformation]: expanded,
+  [ACCORDION_KEYS.cptCodes]: expanded,
+  [ACCORDION_KEYS.facilityRemarks]: expanded,
+  [ACCORDION_KEYS.cptCodeRanges]: expanded,
+  [ACCORDION_KEYS.facilityContact]: expanded,
+});
+
+/** -------------------------
+ *  Root selector for provider facility data
+ * ------------------------- */
+const selectProviderFacilityState = (state: RootState) => ({
+  userRoles: state.providerFacility.userRoles,
+  professionalTitles: state.providerFacility.professionalTitles,
+  otherFacilities: state.providerFacility.otherFacilities,
+  credentialStatuses: state.providerFacility.credentialStatuses,
+  allStates: state.providerFacility.allStates,
+  specialties: state.providerFacility.specialties,
+  organizations: state.providerFacility.organizations,
+  diagnosticClaims: state.providerFacility.diagnosticClaims,
+  calenderAdministrators: state.providerFacility.calenderAdministrators,
+  accommodations: state.providerFacility.accommodations,
+  clusters: state.providerFacility.clusters,
+  facilityIdentifiers: state.providerFacility.facilityIdentifiers,
+  facility: state.providerFacility.facility,
+  schedulingType: state.providerFacility.schedulingType,
+  affiliations: state.providerFacility.affiliations,
+  selectedTab: state.providerFacility.selectedTab,
+  isLoading: state.providerFacility.isLoading,
+});
+
+/** -------------------------
+ *  Component
+ * ------------------------- */
+const AddFacility: React.FC = () => {
+  const theme = useTheme();
+  const P = THEME_PRIMITIVES;
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+
+  const [formData, setFormData] = useState<FacilityResponse>(INITIAL_FACILITY_RESPONSE);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [windowWidth, setWindowWidth] = useState<number>(window.innerWidth);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
+  const [expandedAccordions, setExpandedAccordions] = useState<Record<string, boolean>>(
+    createDefaultAccordions
+  );
+  const [officeHoursValidationOpen, setOfficeHoursValidationOpen] = useState(false);
+  const [officeHoursValidationMessage, setOfficeHoursValidationMessage] = useState("");
+
+  const officeHoursRef = useRef<OfficeHoursGridRef | null>(null);
+  const cptCodeRangeRef = useRef<CptCodeRef | null>(null);
+  const fetchedDropdownData = useRef(false);
+  const resizeRafRef = useRef<number | null>(null);
+
+  const selectDarkMode = (state: RootState) => state?.theme?.mode;
+  const dark_mode = useSelector(selectDarkMode);
+  const isDarkMode = useMemo(() => dark_mode === "dark", [dark_mode]);
+
+  const accountUsersSlice = useSelector((state: RootState) => state.accountUsers, shallowEqual);
+  const { managers, userRoles, lookUpValues, isLoading: accountUsersLoading } = accountUsersSlice;
+
+  const providerFacilityState = useSelector(selectProviderFacilityState, shallowEqual);
+  const {
+    organizations,
+    accommodations,
+    facilityIdentifiers,
+    allStates,
+    clusters,
+    calenderAdministrators,
+    diagnosticClaims,
+  } = providerFacilityState;
+
+  const isLoading = providerFacilityState.isLoading || accountUsersLoading;
+
+  /** -------------------------
+   *  Effects
+   * ------------------------- */
+  useEffect(() => {
+    const handleResize = () => {
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current);
+      }
+      resizeRafRef.current = requestAnimationFrame(() => {
+        setWindowWidth((prev) => (prev === window.innerWidth ? prev : window.innerWidth));
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const hasData =
+      (organizations?.length || 0) > 0 ||
+      (diagnosticClaims?.length || 0) > 0 ||
+      (allStates?.length || 0) > 0 ||
+      (calenderAdministrators?.length || 0) > 0 ||
+      (accommodations?.length || 0) > 0 ||
+      (facilityIdentifiers?.length || 0) > 0 ||
+      (clusters?.length || 0) > 0;
+
+    if (!hasData && !fetchedDropdownData.current) {
+      fetchedDropdownData.current = true;
+      dispatch(fetchProviderFacilityData() as any);
+    }
+  }, [
+    organizations?.length,
+    diagnosticClaims?.length,
+    allStates?.length,
+    calenderAdministrators?.length,
+    accommodations?.length,
+    facilityIdentifiers?.length,
+    clusters?.length,
+    dispatch,
+  ]);
+
+  useEffect(() => {
+    dispatch(fetchSpecialAccommodations() as any);
+  }, [dispatch]);
+
+  /** -------------------------
+   *  Helpers - transform select data into uniform { label, code } objects
+   * ------------------------- */
+  const selectOptions = useMemo(() => {
+    return {
+      organizations:
+        organizations?.map((item: any) => ({
+          ...item,
+          keyValue: item.OrganizationName,
+          keyValueId: item.Id,
+        })) || [],
+      clusters:
+        clusters?.map((item: any) => ({
+          ...item,
+          keyValue: item.Description,
+          keyValueId: item.Id,
+        })) || [],
+      timeZoneOptions: timeZoneOptions,
+      states:
+        allStates?.map((item: any) => ({
+          ...item,
+          keyValue: item.StateName,
+          keyValueId: item.StateAbbreviation,
+        })) || [],
+      accommodations:
+        accommodations?.map((item: any) => ({
+          ...item,
+          label: item.Name,
+          code: item.Id,
+        })) || [],
+      facilityIdentifiers:
+        facilityIdentifiers?.map((item: any) => ({
+          ...item,
+          keyValue: item.Description,
+          keyValueId: item.Id,
+        })) || [],
+      calenderAdministrators:
+        calenderAdministrators?.map((item: any) => ({
+          label: item.FullName,
+          code: item.UserId,
+        })) || [],
+      diagnosticClaims:
+        diagnosticClaims?.map((item: any) => ({
+          label: item.ClaimCondition,
+          code: item.Id,
+        })) || [],
+    };
+  }, [
+    organizations,
+    clusters,
+    allStates,
+    accommodations,
+    facilityIdentifiers,
+    calenderAdministrators,
+    diagnosticClaims,
+  ]);
+
+  const requiredFieldConfigs = useMemo(
+    () => [
+      ...leftColumnFields,
+      ...rightColumnSelectFields,
+      ...generalInformationFields,
+      ...cptCodeFields,
+      ...facilityContactLeft,
+      ...facilityContactRight,
+    ],
+    []
+  );
+
+  const fieldToAccordionMap = useMemo(() => {
+    const map = new Map<string, string>();
+
+    generalInformationFields.forEach((fc: any) => {
+      if (fc?.field) map.set(fc.field, ACCORDION_KEYS.generalInformation);
+    });
+    cptCodeFields.forEach((fc: any) => {
+      if (fc?.field) map.set(fc.field, ACCORDION_KEYS.cptCodes);
+    });
+    facilityRemarks.forEach((fc: any) => {
+      if (fc?.field) map.set(fc.field, ACCORDION_KEYS.facilityRemarks);
+    });
+    facilityContactLeft.forEach((fc: any) => {
+      if (fc?.field) map.set(fc.field, ACCORDION_KEYS.facilityContact);
+    });
+    facilityContactRight.forEach((fc: any) => {
+      if (fc?.field) map.set(fc.field, ACCORDION_KEYS.facilityContact);
+    });
+
+    return map;
+  }, []);
+
+  const scrollToField = useCallback((fieldName: string) => {
+    const el = document.querySelector(`[name="${fieldName}"], [data-field="${fieldName}"]`);
+    if (el && typeof (el as HTMLElement).scrollIntoView === "function") {
+      (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+      if (typeof (el as HTMLElement).focus === "function") {
+        (el as HTMLElement).focus();
+      }
+    }
+  }, []);
+
+  const expandAccordionForFieldAndScroll = useCallback(
+    (fieldName: string) => {
+      const accordionKey = fieldToAccordionMap.get(fieldName);
+      if (!accordionKey) {
+        scrollToField(fieldName);
+        return;
+      }
+
+      setExpandedAccordions((prev) => {
+        if (prev[accordionKey]) return prev;
+        return { ...prev, [accordionKey]: true };
+      });
+
+      setTimeout(() => {
+        scrollToField(fieldName);
+      }, 180);
+    },
+    [fieldToAccordionMap, scrollToField]
+  );
+
+  /** -------------------------
+   *  Validation - read required from field configs
+   * ------------------------- */
+  const validateForm = useCallback(() => {
+    const errors: Record<string, string> = {};
+
+    requiredFieldConfigs.forEach((fc: any) => {
+      if (!fc?.required) return;
+
+      const key = fc.field;
+      const value = (formData as any)[key];
+      if (value === null || value === undefined || value === 0) {
+        errors[key] = `${fc.label || key} is required`;
+      } else if (typeof value === "string" && !value.trim()) {
+        errors[key] = `${fc.label || key} is required`;
+      } else if (Array.isArray(value) && value.length === 0) {
+        errors[key] = `${fc.label || key} is required`;
+      }
+    });
+
+    if (formData.FacilityEmailId && !EMAIL_REGEX.test(String(formData.FacilityEmailId).toLowerCase())) {
+      errors.FacilityEmailId = "Please enter a valid email address";
+    }
+
+    if (
+      formData.FacilityPrimaryPhone &&
+      !PHONE_REGEX.test(String(formData.FacilityPrimaryPhone).replace(/\s/g, ""))
+    ) {
+      errors.FacilityPrimaryPhone = "Please enter a valid phone number";
+    }
+    setFormErrors(errors);
+    return {
+      isValid: Object.keys(errors).length === 0,
+      errors,
+    };
+  }, [formData, requiredFieldConfigs]);
+
+  /** -------------------------
+   *  Special field mapping helper (for complex selects)
+   * ------------------------- */
+  const handleSpecialFieldMapping = useCallback(
+    (field: string, value: any) => {
+      // value might be primitive or { label, code } or array of such
+      switch (field) {
+        case "ClusterLookupValueMappings": {
+          const ids = Array.isArray(value)
+            ? value.map((v: any) => (v?.code ?? v))
+            : [value?.code ?? value];
+          return {
+            ClusterLookupValueMappings: clusters
+              ?.filter((c: any) => ids.includes(c.Id))
+              .map((c: any) => c.Id) || [],
+          };
+        }
+
+        case "Roles": {
+          // Accept array of role names or role objects
+          const selectedNames = Array.isArray(value)
+            ? value.map((v: any) => (typeof v === "string" ? v : v?.label || v?.Name))
+            : [typeof value === "string" ? value : value?.label || value?.Name];
+
+          const selectedRoles = userRoles?.filter((r: any) =>
+            selectedNames.includes(r.Name)
+          );
+          return { Roles: selectedRoles || [] };
+        }
+
+        case "SkillLevel": {
+          const lookupValue =
+            typeof value === "string"
+              ? lookUpValues?.find((l: any) => l.Description === value)
+              : lookUpValues?.find((l: any) => l.LookupValueId === (value?.code ?? value));
+          return { SkillLevel: lookupValue || {} };
+        }
+
+        case "ManagerId": {
+          // Accept manager username or object { label, code } where label=FullName
+          const manager = managers?.find((m: any) =>
+            m.UserName === value || m.UserId === (value?.code ?? value)
+          );
+          return {
+            ManagerName: manager?.FullName || (typeof value === "object" ? value?.label : ""),
+            ManagerId: manager?.UserId ?? (value?.code ?? null),
+          };
+        }
+
+        default:
+          return undefined;
+      }
+    },
+    [clusters, userRoles, lookUpValues, managers]
+  );
+
+  /** -------------------------
+   *  Generic change handler
+   * ------------------------- */
+  const handleChange = useCallback(
+    (fieldName: string, rawValue: any) => {
+      let field = fieldName;
+      if (field === "Does your office have internet connectivity?") field = "HasInternetConnectivity";
+      if (field === "Does your office complete exam documents electronically?") field = "IsElectronicSubmission";
+      if (field === "Contract Status") field = "FacilityCredentialingStatus";
+
+      if (field === "Skill Level") field = "SkillLevel";
+      if (["User Type", "UserType"].includes(field)) field = "UserTypeId";
+      if (["Credential Status", "CredentialingStatus"].includes(field))
+        field = "CredentialingStatus";
+
+      // Clear field-level error immediately (optimistic UX)
+      setFormErrors((prev) => {
+        if (!prev[field]) return prev;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { [field]: removed, ...rest } = prev;
+        return rest;
+      });
+
+      // If this field needs special mapping, use it
+      const special = handleSpecialFieldMapping(field, rawValue);
+      if (special) {
+        setFormData((prev) => ({ ...prev, ...special }));
+        return;
+      }
+
+      // For selects that give { label, code } objects, prefer code
+      const value = (rawValue && typeof rawValue === "object" && "code" in rawValue)
+        ? rawValue.code
+        : rawValue;
+
+      // Calendar administrator special-case: set both id and name
+      if (field === "CalendarAdministratorId" || field === "CalendarAdministrator") {
+        // Accept either id or object or code
+        let id = value;
+        let name = "";
+
+        if (rawValue && typeof rawValue === "object") {
+          id = rawValue.code ?? rawValue;
+          name = rawValue.label ?? rawValue.FullName ?? "";
+        } else {
+          // If provided a primitive id, try to resolve name from options
+          const selected = selectOptions.calenderAdministrators?.find((x: any) => x.code === id);
+          name = selected?.label ?? "";
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          CalendarAdministratorId: id ?? null,
+          CalendarAdministratorName: name ?? "",
+        }));
+        return;
+      }
+
+      // Default update
+      setFormData((prev) => {
+        if ((prev as any)[field] === value) return prev;
+        return { ...prev, [field]: value };
+      });
+    },
+    [handleSpecialFieldMapping, selectOptions]
+  );
+  /** -------------------------
+   *  Save handler (validate -> prepare payload -> dispatch)
+   * ------------------------- */
+   const handleSave = useCallback(async () => {
+    // Validate
+    const validationResult = validateForm();
+    if (!validationResult.isValid) {
+      const firstError = Object.keys(validationResult.errors)[0] || null;
+      if (firstError) {
+        expandAccordionForFieldAndScroll(firstError);
+      }
+      const missingRequiredFields = Object.values(validationResult.errors).filter((message) =>
+        message.toLowerCase().includes("required")
+      );
+
+      if (missingRequiredFields.length > 0) {
+        showToast(missingRequiredFields[0], TOAST_TYPES.ERROR);
+      } else {
+        showToast("Please fix validation errors before saving.", TOAST_TYPES.ERROR);
+      }
+      return;
+    }
+
+    const rows = officeHoursRef.current?.getRows?.() || [];
+    const incompleteOfficeHourDays = rows
+      .filter((row) => row.isOpen && (!row.Open?.trim() || !row.Close?.trim()))
+      .map((row) => row.DayOfWeek);
+
+    if (incompleteOfficeHourDays.length > 0) {
+      const dayText =
+        incompleteOfficeHourDays.length === 1
+          ? incompleteOfficeHourDays[0]
+          : incompleteOfficeHourDays.join(", ");
+      setOfficeHoursValidationMessage(
+        `Please provide valid operation hours for: ${dayText}.`
+      );
+      setOfficeHoursValidationOpen(true);
+      return;
+    }
+
+    if (incompleteOfficeHourDays.length > 0) {
+      const dayText =
+        incompleteOfficeHourDays.length === 1
+          ? incompleteOfficeHourDays[0]
+          : incompleteOfficeHourDays.join(", ");
+      setOfficeHoursValidationMessage(
+        `Please provide valid operation hours for: ${dayText}.`
+      );
+      setOfficeHoursValidationOpen(true);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const payload: any = buildFacilityPayload({ ...formData })
+      try {
+        const rows = officeHoursRef.current?.getRows?.();
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const filteredRows = rows?.map(({ isOpen, id, ...rest }) => rest);
+        if (rows) {
+          payload.DaysOfWeek = filteredRows;
+        }
+      } catch (err) {
+          console.error(err);
+      }
+
+      const res = await addFacility(payload);
+      if(res?.FacilityCreated) {
+          showToast(res?.Response, TOAST_TYPES.SUCCESS);
+          setFormData(INITIAL_FACILITY_RESPONSE);
+          navigate("/provider-management/facilities");
+      }
+    } catch (err) {
+      console.error("Failed to save facility:", err);
+      showToast("Failed to save facility.", TOAST_TYPES.ERROR);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [validateForm, formData, navigate, expandAccordionForFieldAndScroll]);
+
+  const handleAddFacilityLabelClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+  const handleRefreshClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRefreshDialogOpen(true);
+  }, []);
+
+  const handleCancel = useCallback(() => navigate("/provider-management/facilities"), [navigate]);
+
+  const handleCloseIconClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    handleCancel();
+  }, [handleCancel]);
+
+  const handleRefreshConfirm = useCallback(() => {
+    setRefreshDialogOpen(false);
+    setFormData(INITIAL_FACILITY_RESPONSE);
+    setExpandedAccordions(createDefaultAccordions(true));
+  }, []);
+
+  const handleRefreshCancel = useCallback(() => {
+    setRefreshDialogOpen(false);
+  }, []);
+
+  const createAccordionToggleHandler = useCallback(
+    (accordionKey: string) => (isExpanded: boolean) => {
+      setExpandedAccordions((prev) => ({ ...prev, [accordionKey]: isExpanded }));
+    },
+    []
+  );
+
+  const handleAddCptCodeRange = useCallback(() => {
+    setExpandedAccordions((prev) => ({ ...prev, cptCodeRanges: true }));
+    requestAnimationFrame(() => {
+      cptCodeRangeRef.current?.addRow();
+    });
+  }, []);
+
+  /** -------------------------
+   *  Style memo
+   * ------------------------- */
+  const styles = useMemo(() => getStyles(theme, windowWidth), [theme, windowWidth]);
+
+  const facilityStyles = useMemo(() => {
+    const valueColor = isDarkMode ? P.white : P.black;
+    const valueText = {
+      fontSize: "14px",
+      fontWeight: 400 as const,
+      lineHeight: "normal" as const,
+      color: valueColor,
+      fontFamily: "inherit",
+    };
+    return {
+      ...styles,
+      header: {
+        ...styles.accountUsersHeader,
+      },
+      label: {
+        ...styles.label,
+        marginBottom: 9,
+        fontWeight: 400,
+        color: isDarkMode ? P.lightMutedText : "#757575",
+      },
+      formGroup: {
+        ...styles.formGroup,
+        marginBottom: 24,
+      },
+      input: {
+        ...styles.input,
+        background: isDarkMode ? P.inputBgDark : P.white,
+        border: "none",
+        borderRadius: 10,
+        height: "32px",
+        padding: "8px 14px",
+        boxSizing: "border-box" as const,
+        ...valueText,
+      },
+      inputReadOnly: {
+        background: "transparent",
+        border: "none",
+        outline: "none",
+        boxShadow: "none",
+        padding: 0,
+        height: "auto",
+        minHeight: "17px",
+        ...valueText,
+      },
+      editBtn: styles.accountUsersEditBtn,
+      editBtnHover: styles.accountUsersEditBtnHover,
+      cancelBtn: styles.accountUsersCancelBtn,
+      saveBtn: styles.accountUsersSaveBtn,
+      closeIcon: styles.accountUsersCloseIcon,
+      doneIcon: {
+        ...styles.doneIcon,
+        color: P.white,
+      },
+    };
+  }, [P, isDarkMode, styles]);
+
+  const primaryInfoFields = useMemo(
+    () =>
+      leftColumnFields.filter(
+        (f) => f.field !== "FacilityAccommodationLookupValueMappings"
+      ),
+    []
+  );
+
+  const addressInfoFields = useMemo(
+    () => [
+      ...leftColumnFields.filter(
+        (f) => f.field === "FacilityAccommodationLookupValueMappings"
+      ),
+      ...rightColumnSelectFields.filter((f) =>
+        [
+          "FacilityAddress1",
+          "FacilityAddress2",
+          "FacilityCity",
+          "FacilityCounty",
+          "FacilityState",
+          "FacilityZip",
+        ].includes(f.field)
+      ),
+    ],
+    []
+  );
+
+  const identifierInfoFields = useMemo(
+    () =>
+      rightColumnSelectFields.filter((f) =>
+        ["FacilityIdentifier", "ExternalId", "FacilityClusterId"].includes(f.field)
+      ),
+    []
+  );
+
+  const renderFacilityField = useCallback(
+    (fieldConfig: (typeof leftColumnFields)[number] | (typeof rightColumnSelectFields)[number]) => (
+      <RenderField
+        key={fieldConfig.field}
+        fieldConfig={fieldConfig}
+        formData={formData}
+        isEditing
+        styles={facilityStyles}
+        disabled={false}
+        selectOptions={selectOptions}
+        handleChange={handleChange}
+        organizations={organizations}
+        clusters={clusters}
+        states={allStates}
+        isDarkMode={isDarkMode}
+        required={fieldConfig.required ?? false}
+        errors={formErrors}
+        accountUsersForm
+      />
+    ),
+    [
+      allStates,
+      clusters,
+      facilityStyles,
+      formData,
+      formErrors,
+      handleChange,
+      isDarkMode,
+      organizations,
+      selectOptions,
+    ]
+  );
+
+  /** -------------------------
+   *  Render
+   * ------------------------- */
+  if (isLoading) {
+    return (
+      <FacilityFormSkeleton
+        isDarkMode={isDarkMode}
+        accordionCount={6}
+        headerTitleWidth={100}
+        headerTabWidth={210}
+        formHeaderWidth={260}
+        lastAccordionTitleWidth={320}
+      />
+    );
+  }
+  const chipText = theme.custom?.text?.chip;
+  const chipColor = chipText?.color ?? theme.palette.primary.main;
+  return (
+    <Box sx={{ marginBottom: "5px" }}>
+      <Box sx={{ mb: 2, display: "flex", gap: 1, flexWrap: "wrap" }}>
+        <Typography variant="h6" sx={styles.userTitle} onClick={handleCancel}>
+          Facility
+        </Typography>
+        <Box onClick={handleCancel} sx={styles.userTabs}>
+          <Tooltip title="Refresh" sx={{ mr: 1 }}>
+            <IconButton
+              size="small"
+              onClick={handleRefreshClick}
+              sx={{
+                p: 0.25,
+                width: 18,
+                height: 18,
+                minWidth: 18,
+                minHeight: 18,
+                color: chipColor,
+              }}
+            >
+              <Box
+                component="img"
+                src={RefreshIcon}
+                alt="Refresh"
+                sx={{ width: 14, height: 14 }}
+              />
+            </IconButton>
+          </Tooltip>
+          <Typography
+            component="span"
+            sx={styles.addUserAddText}
+            onClick={handleAddFacilityLabelClick}
+          >
+            Add Facility
+          </Typography>
+          <IconButton
+            size="small"
+            onClick={handleCloseIconClick}
+            sx={styles.addUserCloseIcon}
+          >
+            <CloseRoundedIcon
+              sx={{ fontSize: 12, color: theme.palette.text.secondary }}
+            />
+          </IconButton>
+        </Box>
+      </Box>
+
+      <div
+        style={{
+          ...styles.accountUsersContainer,
+          minHeight: "auto",
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
+          paddingBottom: 0,
+        }}
+      >
+        <div style={styles.accountUsersPaper}>
+          <HeaderWithEditActions
+            title="Add New Facility"
+            isEditing
+            saving={isSubmitting}
+            onEdit={() => setIsSubmitting(true)}
+            onCancel={handleCancel}
+            onSave={handleSave}
+            styles={facilityStyles}
+            isCreate
+            headerPadding="15px 22px"
+          />
+          <Box
+            sx={{
+              ...(styles.accountUsersGrid as object),
+              padding: "14px 22px 24px",
+              boxSizing: "border-box",
+              background: styles.accountUsersPaper.background,
+            }}
+          >
+            <Box sx={{ width: "100%", minWidth: 0 }}>
+              {primaryInfoFields.map(renderFacilityField)}
+            </Box>
+            <Box sx={{ width: "100%", minWidth: 0 }}>
+              {addressInfoFields.map(renderFacilityField)}
+            </Box>
+            <Box sx={{ width: "100%", minWidth: 0 }}>
+              {identifierInfoFields.map(renderFacilityField)}
+            </Box>
+          </Box>
+        </div>
+
+        <AccordionComponent
+          styles={styles}
+          isDarkMode={isDarkMode}
+          title="Hours of Operation"
+          accordionKey={ACCORDION_KEYS.hoursOfOperation}
+          expanded={expandedAccordions.hoursOfOperation}
+          onExpandedChange={createAccordionToggleHandler("hoursOfOperation")}
+          detailsPadding={0}
+        >
+          <OfficeHoursGrid isDarkMode={isDarkMode} isEditing ref={officeHoursRef} />
+        </AccordionComponent>
+
+        <AccordionComponent
+          styles={styles}
+          isDarkMode={isDarkMode}
+          title="General Information"
+          accordionKey={ACCORDION_KEYS.generalInformation}
+          expanded={expandedAccordions.generalInformation}
+          onExpandedChange={createAccordionToggleHandler("generalInformation")}
+          detailsPadding={0}
+        >
+          <Box
+            sx={{
+              width: "100%",
+              px: "16px",
+              py: "14px",
+              backgroundColor: isDarkMode ? P.black : P.white,
+              boxSizing: "border-box",
+            }}
+          >
+            {generalInformationFields.map((fieldConfig) => (
+              <Box
+                key={fieldConfig.field}
+                sx={{
+                  maxWidth: fieldConfig.type === "radio" ? "100%" : 326,
+                  width: "100%",
+                  mb: fieldConfig.type === "radio" ? "28px" : "24px",
+                  "&:last-child": { mb: 0 },
+                }}
+              >
+                <RenderField
+                  fieldConfig={fieldConfig}
+                  formData={formData}
+                  isEditing
+                  styles={{
+                    ...facilityStyles,
+                    formGroup: { ...facilityStyles.formGroup, marginBottom: 0 },
+                    label: {
+                      ...facilityStyles.label,
+                      color: isDarkMode ? P.white : P.black,
+                    },
+                    input: {
+                      ...facilityStyles.input,
+                      border: `1px solid ${
+                        isDarkMode ? P.emptyInputBorderDark : P.labelMuted
+                      }`,
+                      width: "100%",
+                      maxWidth: 326,
+                    },
+                  }}
+                  selectOptions={selectOptions}
+                  handleChange={handleChange}
+                  isDarkMode={isDarkMode}
+                  required={fieldConfig.required ?? false}
+                  errors={formErrors}
+                  accountUsersForm
+                  hideMarginBottom
+                />
+              </Box>
+            ))}
+          </Box>
+        </AccordionComponent>
+
+        <AccordionComponent
+          styles={styles}
+          isDarkMode={isDarkMode}
+          title="CPT Codes"
+          accordionKey={ACCORDION_KEYS.cptCodes}
+          expanded={expandedAccordions.cptCodes}
+          onExpandedChange={createAccordionToggleHandler("cptCodes")}
+          detailsPadding={0}
+        >
+          <Box
+            sx={{
+              width: "100%",
+              px: "16px",
+              py: "14px",
+              backgroundColor: isDarkMode ? P.black : P.white,
+              boxSizing: "border-box",
+            }}
+          >
+            {cptCodeFields.map((fieldConfig) => (
+              <RenderField
+                key={fieldConfig.field}
+                fieldConfig={fieldConfig}
+                formData={formData}
+                isEditing
+                styles={facilityStyles}
+                selectOptions={selectOptions}
+                handleChange={handleChange}
+                isDarkMode={isDarkMode}
+                required={false}
+                errors={formErrors}
+                accountUsersForm
+              />
+            ))}
+          </Box>
+        </AccordionComponent>
+
+        <AccordionComponent
+          styles={styles}
+          isDarkMode={isDarkMode}
+          title="Facility Remarks"
+          accordionKey={ACCORDION_KEYS.facilityRemarks}
+          expanded={expandedAccordions.facilityRemarks}
+          onExpandedChange={createAccordionToggleHandler("facilityRemarks")}
+          detailsPadding={0}
+        >
+          <Box
+            sx={{
+              width: "100%",
+              px: "16px",
+              py: "14px",
+              backgroundColor: isDarkMode ? P.black : P.white,
+              boxSizing: "border-box",
+            }}
+          >
+            {facilityRemarks.map((fieldConfig) => (
+              <RenderField
+                key={fieldConfig.field}
+                fieldConfig={fieldConfig}
+                formData={formData}
+                isEditing
+                styles={{
+                  ...facilityStyles,
+                  formGroup: { ...facilityStyles.formGroup, marginBottom: 0 },
+                  input: {
+                    ...facilityStyles.input,
+                    minHeight: 155,
+                    borderRadius: 10,
+                    border: `1px solid ${isDarkMode ? P.darkBorder : P.stroke}`,
+                    padding: "14px 18px",
+                  },
+                }}
+                selectOptions={selectOptions}
+                handleChange={handleChange}
+                isDarkMode={isDarkMode}
+                required={false}
+                errors={formErrors}
+                accountUsersForm
+                hideMarginBottom
+              />
+            ))}
+          </Box>
+        </AccordionComponent>
+
+        <AccordionComponent
+          styles={styles}
+          isDarkMode={isDarkMode}
+          title="CPT Code Ranges"
+          showAddButton
+          btnText="+ Add CPT Code Range"
+          onBtnClick={handleAddCptCodeRange}
+          accordionKey={ACCORDION_KEYS.cptCodeRanges}
+          expanded={expandedAccordions.cptCodeRanges}
+          onExpandedChange={createAccordionToggleHandler("cptCodeRanges")}
+          detailsPadding={0}
+        >
+          <Box
+            sx={{
+              width: "100%",
+              px: "16px",
+              py: "14px",
+              backgroundColor: isDarkMode ? P.black : P.white,
+              boxSizing: "border-box",
+            }}
+          >
+            <CptCode ref={cptCodeRangeRef} isEdit isDarkMode={isDarkMode} styles={styles} />
+          </Box>
+        </AccordionComponent>
+
+        <AccordionComponent
+          styles={styles}
+          isDarkMode={isDarkMode}
+          title="Facility Contact (This contact will be used for scheduling)"
+          accordionKey={ACCORDION_KEYS.facilityContact}
+          expanded={expandedAccordions.facilityContact}
+          onExpandedChange={createAccordionToggleHandler("facilityContact")}
+          detailsPadding={0}
+        >
+          <Box
+            sx={{
+              width: "100%",
+              px: "16px",
+              py: "14px",
+              backgroundColor: isDarkMode ? P.black : P.white,
+              boxSizing: "border-box",
+            }}
+          >
+            <Box
+              sx={{
+                padding: "24px",
+                backgroundColor: isDarkMode ? P.gridHeaderDark : P.gridHeaderLight,
+                border: `1px solid ${isDarkMode ? P.darkBorder : P.stroke}`,
+                borderRadius: "10px",
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                gap: { xs: "24px", md: "28px 48px" },
+              }}
+            >
+              <Box sx={{ width: "100%", maxWidth: 320 }}>
+                {facilityContactLeft.map((fieldConfig) => (
+                  <RenderField
+                    key={fieldConfig.field}
+                    fieldConfig={fieldConfig}
+                    formData={formData}
+                    isEditing
+                    styles={{
+                      ...facilityStyles,
+                      label: {
+                        ...facilityStyles.label,
+                        color: P.labelMuted,
+                      },
+                      input: {
+                        ...facilityStyles.input,
+                        background: isDarkMode ? P.inputBgDark : P.white,
+                        border: "none",
+                        height: 32,
+                        borderRadius: 10,
+                      },
+                    }}
+                    selectOptions={selectOptions}
+                    handleChange={handleChange}
+                    isDarkMode={isDarkMode}
+                    required={false}
+                    errors={formErrors}
+                    accountUsersForm
+                  />
+                ))}
+              </Box>
+              <Box sx={{ width: "100%", maxWidth: 320 }}>
+                {facilityContactRight.map((fieldConfig) => (
+                  <RenderField
+                    key={fieldConfig.field}
+                    fieldConfig={fieldConfig}
+                    formData={formData}
+                    isEditing
+                    styles={{
+                      ...facilityStyles,
+                      label: {
+                        ...facilityStyles.label,
+                        color: P.labelMuted,
+                      },
+                      input: {
+                        ...facilityStyles.input,
+                        background: isDarkMode ? P.inputBgDark : P.white,
+                        border: "none",
+                        height: 32,
+                        borderRadius: 10,
+                      },
+                    }}
+                    selectOptions={selectOptions}
+                    handleChange={handleChange}
+                    isDarkMode={isDarkMode}
+                    required={false}
+                    errors={formErrors}
+                    accountUsersForm
+                  />
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        </AccordionComponent>
+      </div>
+
+      <ConfirmationModal
+        open={refreshDialogOpen}
+        title="Alert!"
+        description="Refreshing this tab will reload the latest data for this tab. Any unsaved changes on this tab will be lost. Other open tabs will remain unchanged. Do you wish to continue?"
+        confirmLabel="Yes"
+        cancelLabel="Cancel"
+        onConfirm={handleRefreshConfirm}
+        onCancel={handleRefreshCancel}
+        onClose={handleRefreshCancel}
+        isDarkMode={isDarkMode}
+      />
+      <ConfirmationModal
+        open={officeHoursValidationOpen}
+        title="Office Hours Required"
+        description={officeHoursValidationMessage}
+        confirmLabel="OK"
+        onConfirm={() => {
+          setOfficeHoursValidationOpen(false);
+          setOfficeHoursValidationMessage("");
+        }}
+        onClose={() => {
+          setOfficeHoursValidationOpen(false);
+          setOfficeHoursValidationMessage("");
+        }}
+        isDarkMode={isDarkMode}
+      />
+    </Box>
+  );
+};
+
+export default AddFacility;
