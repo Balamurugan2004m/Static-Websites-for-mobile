@@ -1,0 +1,601 @@
+import { useEffect, useState } from "react";
+import {
+  Drawer,
+  Box,
+  Typography,
+  TextField,
+  Divider,
+  Button,
+  List,
+  ListItem,
+  ListItemText,
+  InputAdornment,
+  useTheme,
+  Checkbox,
+} from "@mui/material";
+import SearchIcon from "../../assets/search-icon.svg";
+import Cancel from "../../assets/Cancel.svg";
+import CancelDark from "../../assets/Cancel-Dark-Mode.svg";
+import { THEME_PRIMITIVES } from '../../theme';
+import WidgetSuccessToast from "./components/widget-toast";
+import { widgetItems, } from "./mock/widget-data";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "../../store";
+import { setPinnedWidgets } from "../../store/slice/widget-slice";
+import { useAuth } from "../../contexts/AuthContext";
+import {
+  hasAnyAllowedClaim,
+  CASE_MANAGEMENT_QUEUE_CLAIMS,
+  CONTACT_CENTER_QUEUE_CLAIMS,
+  DIAGNOSTICS_ADMIN_QUEUE_CLAIMS,
+  FACILITY_DIAGNOSTIC_QUEUE_CLAIMS,
+  FCR_QUEUE_CLAIMS,
+  PROJECT_MANAGEMENT_OFFICE_QUEUE_CLAIMS,
+  PROVIDER_QUEUE_CLAIMS,
+  QA_QUEUE_CLAIMS,
+} from "../../constants/work-queue-claims";
+
+const WIDGET_CLAIMS: Record<string, readonly string[]> = {
+  "provider": PROVIDER_QUEUE_CLAIMS,
+  "case-management": CASE_MANAGEMENT_QUEUE_CLAIMS,
+  "contact-center": CONTACT_CENTER_QUEUE_CLAIMS,
+  "facility-diagnostics": FACILITY_DIAGNOSTIC_QUEUE_CLAIMS,
+  "diagnostics-admin": DIAGNOSTICS_ADMIN_QUEUE_CLAIMS,
+  "final-contention-review": FCR_QUEUE_CLAIMS,
+  "qa": QA_QUEUE_CLAIMS,
+  "project-management-office": PROJECT_MANAGEMENT_OFFICE_QUEUE_CLAIMS,
+};
+
+
+interface WidgetMenuProps {
+  onAddWidgets?: (selectedWidgets: string[]) => void;
+}
+
+const WidgetMenu: React.FC<WidgetMenuProps> = ({ onAddWidgets, }) => {
+  const theme = useTheme();
+  const P = THEME_PRIMITIVES;
+  const isDark = theme.palette.mode === 'dark';
+  const [open, setOpen] = useState(false);
+  const [selectedWidgets, setSelectedWidgets] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [addedWidgetCount, setAddedWidgetCount] = useState(0);
+  const MAX_WIDGETS = 5;
+  const [showLimitToast, setShowLimitToast] = useState(false);
+  const { hasClaim } = useAuth();
+
+  const dispatch = useDispatch();
+
+  const pinnedWidgetIds = useSelector(
+      (state: RootState) => state.widgets.pinnedWidgetIds
+  );
+
+  useEffect(() => {
+    setSelectedWidgets([...pinnedWidgetIds]);
+}, [pinnedWidgetIds]);
+
+  useEffect(() => {
+    const openPanel = () => {
+        setOpen(true);
+        setSelectedWidgets([...pinnedWidgetIds]);
+    };
+
+    window.addEventListener("open-widget-panel", openPanel);
+
+    return () =>
+        window.removeEventListener("open-widget-panel", openPanel);
+}, [pinnedWidgetIds]);
+
+  const handleClose = () => {
+    setOpen(false);
+    setSelectedWidgets([...pinnedWidgetIds]);
+    setSearchTerm('');
+};
+
+  const filteredWidgets = widgetItems
+  .filter((widget) => {
+    const requiredClaims = WIDGET_CLAIMS[widget.id];
+
+    if (!requiredClaims) {
+      return false;
+    }
+
+    return hasAnyAllowedClaim(hasClaim, requiredClaims);
+  })
+  .filter((widget) => {
+    const search = searchTerm.toLowerCase();
+
+    return (
+      widget.title.toLowerCase().includes(search) ||
+      widget.children?.some((child) =>
+        child.label.toLowerCase().includes(search)
+      )
+    );
+  });
+
+const handleWidgetToggle = (id: string) => {
+  setSelectedWidgets((prev) => {
+
+    const parent = widgetItems.find((widget) => widget.id === id);
+    if (parent) {
+      const isSelected = prev.includes(id);
+      const childIds = parent.children?.map((child) => child.id) ?? [];
+
+      if (isSelected) {
+        return prev.filter(
+          (selectedId) => selectedId !== id && !childIds.includes(selectedId)
+        );
+      }
+
+      // Only auto-select the first MAX_WIDGETS children when parent is checked
+      const childrenToSelect = childIds.slice(0, MAX_WIDGETS);
+      const childrenToAdd = childrenToSelect.filter((childId) => !prev.includes(childId));
+      return [...prev, id, ...childrenToAdd];
+    }
+
+    const parentWidget = widgetItems.find((widget) =>
+      widget.children?.some((child) => child.id === id)
+    );
+    if (!parentWidget) return prev;
+
+    const isChildSelected = prev.includes(id);
+
+    if (isChildSelected) {
+      const updatedSelection = prev.filter((selectedId) => selectedId !== id);
+      const hasSelectedChildren = parentWidget.children?.some((child) =>
+        updatedSelection.includes(child.id)
+      );
+      if (!hasSelectedChildren) {
+        return updatedSelection.filter((selectedId) => selectedId !== parentWidget.id);
+      }
+      return updatedSelection;
+    }
+
+    // No pre-check limit — limit is enforced at Add time via toast
+    const updatedSelection = [...prev, id];
+    if (!updatedSelection.includes(parentWidget.id)) {
+      updatedSelection.push(parentWidget.id);
+    }
+    return updatedSelection;
+  });
+};
+
+const handleAddWidgets = () => {
+    const childIdSet = new Set(
+        widgetItems.flatMap((w) => w.children?.map((c) => c.id) ?? [])
+    );
+    const totalSelectedChildren = selectedWidgets.filter((id) => childIdSet.has(id)).length;
+
+    // Guard: total selected child widgets must not exceed MAX_WIDGETS
+    if (totalSelectedChildren > MAX_WIDGETS) {
+        setShowLimitToast(true);
+        setTimeout(() => setShowLimitToast(false), 3000);
+        return;
+    }
+
+    // Count newly added child widgets (children not yet in pinnedWidgetIds)
+    const newlyAddedCount = selectedWidgets.filter(
+        (id) => childIdSet.has(id) && !pinnedWidgetIds.includes(id)
+    ).length;
+
+    // Commit the final selection to Redux
+    dispatch(setPinnedWidgets(selectedWidgets));
+
+    if (onAddWidgets) {
+        onAddWidgets(selectedWidgets);
+    }
+
+    if (newlyAddedCount > 0) {
+        setAddedWidgetCount(newlyAddedCount);
+        setShowSuccessToast(true);
+        setTimeout(() => {
+            setShowSuccessToast(false);
+        }, 3000);
+    }
+
+    setOpen(false);
+    setSearchTerm('');
+};
+
+  return (
+    <>
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={handleClose}
+      ModalProps={{ keepMounted: false }}
+      BackdropProps={{
+        sx: {
+          backgroundColor: P.modalBackdropWidgets,
+          zIndex: theme.zIndex.drawer,
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+        }
+      }}
+      PaperProps={{
+        sx: {
+          width: 344,
+          bgcolor: theme.palette.mode === 'dark'
+            ? theme.palette.background.paper
+            : P.white,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          color: theme.palette.text.primary,
+          zIndex: theme.zIndex.drawer + 1,
+          borderTopRightRadius: 0,
+          borderBottomRightRadius: 0,
+          boxShadow: "none",
+         
+        }
+      }}
+      sx={{ zIndex: theme.zIndex.drawer + 2,
+          "& .MuiDrawer-paper": {
+      borderTopRightRadius: "0 !important",
+      borderBottomRightRadius: "0 !important",
+      borderTopLeftRadius: "10px",
+      borderBottomLeftRadius: "10px",
+    },
+       }}
+    >
+      <Box sx={{
+        p: 2,
+        paddingLeft: "21px",
+        paddingRight: "21px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        fontWeight: 700,
+        letterHeight: "100%",
+        letterSpacing: "0%",
+        bgcolor: isDark ? theme.custom?.colors?.accordion?.titleLight : P.gridHeaderLight,
+        borderBottom: `1px solid ${isDark ? theme.palette.divider : P.dotPhraseBorder}`,
+        fontFamily: theme.custom?.typeScale.openSans,
+      }}>
+        <Typography variant="subtitle1" fontWeight="bold" sx={{fontFamily: theme.custom?.typeScale.openSans, fontSize: "14px !important",}}>
+          Available Work Queues
+        </Typography>
+        <Box
+          component="img"
+          src={isDark ? CancelDark : Cancel}
+          alt="Close"
+          role="button"
+          aria-label="Close"
+          tabIndex={0}
+          onClick={handleClose}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleClose();
+            }
+          }}
+          sx={{ width: 24, height: 24, cursor: "pointer" }}
+        />
+      </Box>
+
+      <Box sx={{
+        p: 0,
+        flexGrow: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        bgcolor: theme.palette.mode === 'dark' ? theme.palette.background.paper : P.white,
+      }}>
+        <Box sx={{ mt: 2, mb: 2, px: 2 }}>
+          <TextField
+            variant="outlined"
+            size="small"
+            placeholder="Search Queues"
+            fullWidth
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            sx={{
+              backgroundColor: theme.palette.mode === 'dark' ? 'grey' : P.white,
+              borderRadius: "8px",
+              fontFamily: theme.custom?.typeScale.openSans,
+              "& .MuiOutlinedInput-root": {
+                borderRadius: "8px",
+                "& fieldset": { border: `1px solid ${theme.palette.mode === 'dark' ? theme.palette.divider : P.dotPhraseBorder}` },
+                "& input": {
+                  padding: "12px 16px",
+                },
+                "& input::placeholder": {
+                  color: "#000", 
+                  opacity: 1,
+                  fontWeight: 400,
+                  fontSize: "14px",     
+                },
+                "&:hover fieldset": {
+      borderColor: theme.palette.mode === "dark"
+        ? theme.palette.divider
+        : P.dotPhraseBorder,
+    },
+
+    // Focus border
+    "&.Mui-focused fieldset": {
+      borderColor: theme.palette.mode === "dark"
+        ? theme.palette.divider
+        : P.dotPhraseBorder,
+      borderWidth: "1px", 
+    },
+              }
+            }}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end" sx={{ mr: 1 }}>
+                 <Box
+                  component="img"
+                  src={SearchIcon}
+                  alt="Search"
+                  sx={{
+                    width: 18.22,
+                    height: 18.22,
+                  }}
+                />
+                </InputAdornment>
+              ),
+            }}
+          />
+        </Box>
+
+        <Divider sx={{ mx: 0, borderColor: theme.palette.mode === "dark" ? theme.palette.divider : P.dotPhraseBorder}} />
+
+        <List
+  sx={{
+    flexGrow: 1,
+    overflowY: "auto",
+    padding: 0,
+    "&::-webkit-scrollbar": {
+      display: "none",
+    },
+    scrollbarWidth: "none",
+    msOverflowStyle: "none",
+  }}
+>
+  {filteredWidgets.map((item) => {
+    const isSelected = selectedWidgets.includes(item.id);
+
+    return (
+      <Box key={item.id}>
+
+        {/* Parent Work Queue */}
+        <ListItem
+          onClick={() => handleWidgetToggle(item.id)}
+          sx={{
+            height: "80px",
+            px: "15px",
+            py: 0,
+            display: "flex",
+            alignItems: "center",
+            borderBottom: `1px solid ${
+              theme.palette.mode === "dark"
+                ? theme.palette.divider
+                : P.dotPhraseBorder
+            }`,
+            backgroundColor: isSelected
+              ? P.sidebarSelectedBg
+              : P.white,
+            cursor: "pointer",
+            boxSizing: "border-box",
+
+            "&:hover": {
+              backgroundColor: isSelected
+                ? P.sidebarSelectedBg
+                : P.gridHeaderLight,
+            },
+          }}
+        >
+          <Checkbox
+            checked={isSelected}
+            size="small"
+            onClick={(event) => event.stopPropagation()}
+            onChange={() => handleWidgetToggle(item.id)}
+            sx={{
+                  p: 0,
+                  mr: "6px",
+                
+
+                  "& .MuiSvgIcon-root": {
+                    
+                      width: "20px",
+                      height: "20px",
+                      borderWidth: "0.5px",
+                      borderRaidus: "2px",
+                    },
+
+                    "&.Mui-checked": {
+                      color: P.primary,
+                    },
+
+                    "&:not(.Mui-checked)": {
+                      color: "#787878",
+                    },
+  
+                }}
+          />
+
+          <ListItemText
+            primary={item.title}
+            sx={{
+              m: 0,
+            }}
+            primaryTypographyProps={{
+              fontWeight: 600,
+              fontSize: "14px !important",
+              lineHeight: "20px",
+              fontFamily: theme.custom?.typeScale.openSans,
+              color: P.black,
+            }}
+          />
+        </ListItem>
+
+        {/* Child Work Queues */}
+        {item.children?.map((child) => {
+          const isChildSelected = selectedWidgets.includes(child.id);
+
+          return (
+            <ListItem
+              key={child.id}
+              onClick={() => handleWidgetToggle(child.id)}
+              sx={{
+                minHeight: "60px",
+                height: "80px",
+                pl: "38px",
+                pr: "16px",
+                display: "flex",
+                alignItems: "center",
+                borderBottom: `1px solid ${
+                  theme.palette.mode === "dark"
+                    ? theme.palette.divider
+                    : "#E5E7EB"
+                }`,
+                backgroundColor: isChildSelected
+                  ? (theme.palette.mode === "dark" ? "#1e3a5f" : "#DCE6F5")
+                  : (theme.palette.mode === "dark" ? theme.palette.background.paper : P.white),
+                cursor: "pointer",
+                boxSizing: "border-box",
+                transition: "background-color 0.15s ease",
+                "&:hover": {
+                  backgroundColor: isChildSelected
+                    ? (theme.palette.mode === "dark" ? "#234570" : "#D2DEEF")
+                    : (theme.palette.mode === "dark" ? "action.hover" : "#F4F6F8"),
+                },
+              }}
+            >
+              <Checkbox
+                checked={isChildSelected}
+                size="small"
+                onClick={(event) => event.stopPropagation()}
+                onChange={() => handleWidgetToggle(child.id)}
+                sx={{
+                  p: 0,
+                  mr: "6px",
+                  mb: "2px",
+                  "& .MuiSvgIcon-root": {
+                    width: "18px",
+                    height: "18px",
+                  },
+                  "&.Mui-checked": {
+                    color: P.primary,
+                  },
+                  "&:not(.Mui-checked)": {
+                    color: "#787878",
+                  },
+                }}
+              />
+              <Typography
+                sx={{
+                  fontWeight: 700,
+                  fontSize: "13px !important",
+                  lineHeight: "14px",
+                  fontFamily: theme.custom?.typeScale.openSans,
+                  color: theme.palette.mode === "dark" ? "text.primary" : "#111827",
+                  mb: "4px",
+                }}
+              >
+                {child.label}
+              </Typography>
+            </ListItem>
+          );
+        })}
+      
+      </Box>
+    );
+  })}
+</List>
+      </Box>
+
+      <Divider sx={{ mx: 0, borderColor: theme.palette.mode === "dark" ? theme.palette.divider : P.dotPhraseBorder }} />
+
+      <Box
+        sx={{
+          p: "10px 155px 10px 19px",
+          display: "flex",
+          justifyContent: "flex-start",
+          gap: "10px",
+          alignItems: "center",
+          flexShrink: 0,
+          bgcolor: theme.palette.mode === 'dark' ? theme.custom?.colors?.accordion?.titleLight: P.gridHeaderLight,
+        }}
+      >
+        <Button
+          variant="contained"
+          onClick={handleAddWidgets}
+          disabled={(() => {
+              // Order-insensitive comparison: same IDs in any order = disabled
+              if (selectedWidgets.length !== pinnedWidgetIds.length) return false;
+              const pinnedSet = new Set(pinnedWidgetIds);
+              return selectedWidgets.every((id) => pinnedSet.has(id));
+          })()}
+          sx={{
+            backgroundColor: P.primary,
+            color: P.white,
+            textTransform: 'none',
+            borderRadius: '10px',
+            height: "34px",
+            minWidth: "90px",
+            padding: "14px 7px 14px 7px",
+            fontFamily: theme.custom?.typeScale.openSans,
+            '&:hover': { backgroundColor: P.primaryHover },
+            '&:disabled': {
+              backgroundColor: theme.palette.mode === 'dark' ? P.mutedActionSurface : P.primary,
+              color: theme.palette.mode === 'dark' ? theme.custom?.colors?.providerLayout?.mutedIcon : P.white
+            }
+          }}
+        >
+          Add {/*{(() => {
+            const newlySelectedWidgets = selectedWidgets.filter(id => !currentWidgets.includes(id));
+            return newlySelectedWidgets.length > 0 ? `(${newlySelectedWidgets.length})` : '';
+          })()}*/}
+        </Button>
+
+        <Button
+          variant="text"
+          onClick={handleClose}
+          sx={{
+            color: theme.palette.mode === 'dark' ? P.requiredFieldColor : P.secondaryButtonText,
+            textTransform: 'none',
+            fontSize: '14px',
+            height: '34px',
+            width: '90px',
+            borderRadius: '10px',
+            padding: "18px 40px 18px 40px",
+            minWidth: '90px',
+            backgroundColor: P.dotPhraseBorder,
+            boxShadow: "none",
+            fontFamily: theme.custom?.typeScale.openSans,
+            '&:hover': {
+              backgroundColor: P.secondaryButtonHover,
+              boxShadow: "none",
+            }
+          }}
+        >
+          Cancel
+        </Button>
+      </Box>
+
+    </Drawer>
+     {showSuccessToast && (
+      <WidgetSuccessToast
+        variant="success"
+        title="Successfully"
+        message={`The ${addedWidgetCount} widget${addedWidgetCount > 1 ? "s" : ""} successfully added to home.`}
+        onClose={() => setShowSuccessToast(false)}
+      />
+    )}
+    {showLimitToast && (
+      <WidgetSuccessToast
+        variant="warning"
+        title="Warning"
+        message="You can display up to 5 widgets."
+        onClose={() => setShowLimitToast(false)}
+      />
+    )}
+    </>
+  );
+};
+
+export default WidgetMenu;
