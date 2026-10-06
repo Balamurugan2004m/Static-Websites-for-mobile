@@ -1,0 +1,206 @@
+/**
+ * Date formatting and limitation utilities for MM/DD/YYYY input fields.
+ * Ensures Month is limited to 1-12 and Day is limited to the max days of the month.
+ */
+
+/**
+ * Returns the maximum days in a given month (1-12).
+ * Handles 30-day months, 31-day months, and February (with leap year check).
+ */
+export const getMaxDaysInMonth = (month: number, year?: number): number => {
+  if (month < 1 || month > 12) return 31;
+  // April, June, September, November
+  if (month === 4 || month === 6 || month === 9 || month === 11) {
+    return 30;
+  }
+  // February
+  if (month === 2) {
+    if (year && year >= 1000) {
+      const isLeap = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+      return isLeap ? 29 : 28;
+    }
+    // If year is unknown or partially typed, allow up to 29
+    return 29;
+  }
+  // January, March, May, July, August, October, December
+  return 31;
+};
+
+/**
+ * Formats and limits a typed or pasted date input string to a valid MM/DD/YYYY format.
+ * - Month: limited to 01-12
+ * - Day: limited to 01 through last day of that month (taking leap year into account)
+ * - Year: limited to 4 digits
+ */
+export const formatAndLimitDateInput = (raw: string, prevVal: string = ""): string => {
+  if (!raw) return "";
+
+  const prevStr = String(prevVal || "");
+
+  // Handle deletion / backspace
+  if (raw.length < prevStr.length) {
+    if (prevStr.endsWith("/") && raw === prevStr.slice(0, -1)) {
+      return raw.slice(0, -1);
+    }
+    return raw.replace(/\/+/g, "/");
+  }
+
+  const rawDigits = raw.replace(/\D/g, "");
+  if (!rawDigits) return "";
+
+  let monthStr = "";
+  let dayStr = "";
+  let yearStr = "";
+
+  // Check if input was entered with slashes (e.g. typing after slash, or pasted "MM/DD/YYYY")
+  const slashParts = raw.split("/").map((p) => p.replace(/\D/g, ""));
+  if (slashParts.length > 1) {
+    monthStr = slashParts[0] || "";
+    dayStr = slashParts[1] || "";
+    yearStr = slashParts.slice(2).join("").slice(0, 4) || "";
+  } else {
+    // Pure digits entered sequentially
+    if (rawDigits.length === 1) {
+      if (Number(rawDigits) >= 2) {
+        // Digits 2-9 cannot be first digit of month (01-12), auto-prefix 0
+        monthStr = `0${rawDigits}`;
+      } else {
+        monthStr = rawDigits;
+      }
+    } else {
+      monthStr = rawDigits.slice(0, 2);
+      const remaining = rawDigits.slice(2);
+      if (remaining.length === 1) {
+        if (Number(remaining) >= 4) {
+          // Digits 4-9 cannot be first digit of day (01-31), auto-prefix 0
+          dayStr = `0${remaining}`;
+        } else {
+          dayStr = remaining;
+        }
+      } else if (remaining.length >= 2) {
+        dayStr = remaining.slice(0, 2);
+        yearStr = remaining.slice(2, 6);
+      }
+    }
+  }
+
+  // 1. Validate & Limit Month (01 to 12)
+  if (monthStr.length === 1) {
+    if (Number(monthStr) >= 2) {
+      monthStr = `0${monthStr}`;
+    }
+  } else if (monthStr.length >= 2) {
+    monthStr = monthStr.slice(0, 2);
+    let m = parseInt(monthStr, 10);
+    if (m > 12) m = 12;
+    if (m === 0) m = 1;
+    monthStr = String(m).padStart(2, "0");
+  }
+
+  const monthNum = parseInt(monthStr, 10) || 0;
+
+  // 2. Validate & Limit Year (up to 4 digits)
+  yearStr = yearStr.slice(0, 4);
+  const yearNum = yearStr.length === 4 ? parseInt(yearStr, 10) : undefined;
+
+  // 3. Validate & Limit Day (01 to maxDays of month)
+  if (dayStr.length === 1) {
+    const maxDays = monthNum > 0 ? getMaxDaysInMonth(monthNum, yearNum) : 31;
+    const maxFirstDigit = Math.floor(maxDays / 10);
+    if (Number(dayStr) > maxFirstDigit) {
+      dayStr = `0${dayStr}`;
+    }
+  } else if (dayStr.length >= 2) {
+    dayStr = dayStr.slice(0, 2);
+    let d = parseInt(dayStr, 10);
+    const maxDays = monthNum > 0 ? getMaxDaysInMonth(monthNum, yearNum) : 31;
+    if (d > maxDays) d = maxDays;
+    if (d === 0) d = 1;
+    dayStr = String(d).padStart(2, "0");
+  }
+
+  // Re-check February 29 if year is 4 digits and not a leap year
+  if (monthNum === 2 && dayStr === "29" && yearNum) {
+    const isLeap = (yearNum % 4 === 0 && yearNum % 100 !== 0) || (yearNum % 400 === 0);
+    if (!isLeap) {
+      dayStr = "28";
+    }
+  }
+
+  // Assemble formatted string
+  if (yearStr) {
+    return `${monthStr}/${dayStr}/${yearStr}`;
+  }
+  if (dayStr) {
+    return dayStr.length === 2 ? `${monthStr}/${dayStr}/` : `${monthStr}/${dayStr}`;
+  }
+  if (monthStr.length === 2) {
+    return `${monthStr}/`;
+  }
+  return monthStr;
+};
+
+/**
+ * Normalizes existing date string (ISO, YYYY-MM-DD, or MM/DD/YYYY) to MM/DD/YYYY.
+ * Validates and limits month (01-12) and day (01-maxDays).
+ * Filters out uninitialized dates with year < 1753.
+ */
+export const formatDisplayDate = (val: string): string => {
+  if (!val) return "";
+  const trimmed = String(val).trim();
+
+  // If already in MM/DD/YYYY or partially typed (e.g. MM/DD/ or MM/DD/Y...)
+  if (trimmed.includes("/")) {
+    const slashParts = trimmed.split("/");
+    if (slashParts.length === 3) {
+      if (slashParts[0].length === 4) {
+        // YYYY/MM/DD from backend
+        const [y, m, d] = slashParts;
+        const yearNum = parseInt(y, 10);
+        if (!Number.isNaN(yearNum) && yearNum < 1753) return "";
+        const monthNum = Math.min(12, Math.max(1, parseInt(m, 10) || 1));
+        const maxDays = getMaxDaysInMonth(monthNum, yearNum);
+        const dayNum = Math.min(maxDays, Math.max(1, parseInt(d, 10) || 1));
+        return `${String(monthNum).padStart(2, "0")}/${String(dayNum).padStart(2, "0")}/${y}`;
+      }
+
+      // MM/DD/YYYY or partially typed MM/DD/Y...
+      const [, , y] = slashParts;
+      // Only filter out uninitialized DB date if year is complete 4 digits and < 1753
+      if (y && y.length === 4) {
+        const yearNum = parseInt(y, 10);
+        if (!Number.isNaN(yearNum) && yearNum < 1753) return "";
+      }
+      return trimmed;
+    }
+    return trimmed;
+  }
+
+  // Handle ISO strings like 2026-10-20T00:00:00.000Z or 2026-10-20
+  const dashParts = trimmed.split("T")[0].split("-");
+  if (dashParts.length === 3) {
+    let y = "";
+    let m = "";
+    let d = "";
+    if (dashParts[0].length === 4) {
+      // YYYY-MM-DD
+      [y, m, d] = dashParts;
+    } else if (dashParts[2].length === 4) {
+      // MM-DD-YYYY
+      [m, d, y] = dashParts;
+    } else {
+      return trimmed;
+    }
+
+    const yearNum = parseInt(y, 10);
+    if (!Number.isNaN(yearNum) && yearNum < 1753) return "";
+
+    const monthNum = Math.min(12, Math.max(1, parseInt(m, 10) || 1));
+    const maxDays = getMaxDaysInMonth(monthNum, yearNum);
+    const dayNum = Math.min(maxDays, Math.max(1, parseInt(d, 10) || 1));
+
+    return `${String(monthNum).padStart(2, "0")}/${String(dayNum).padStart(2, "0")}/${y}`;
+  }
+
+  return trimmed;
+};
