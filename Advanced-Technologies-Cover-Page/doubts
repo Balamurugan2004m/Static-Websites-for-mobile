@@ -1,0 +1,5 @@
+1)Figma shows Middle Name and Suffix fields, but these are not available in either the legacy or React application. Do we need to add them in react application?
+
+2)QA suggested adding a Column Selector similar to the legacy application. If required, could you please update the design for how it should appear on the User DBQ Training page?
+
+3)During zoom testing, the "+ Add User" text disappears and only the icon is visible. QA raised this as an issue. Should the text remain visible at all zoom levels?
