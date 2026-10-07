@@ -7,6 +7,7 @@ import {
     Fa4CalendarIcon,
     Fa4CertificateIcon,
     Fa4DashboardIcon,
+    Fa4FileExcelOIcon,
     Fa4FlagIcon,
     Fa4HospitalOIcon,
     Fa4UploadIcon,
@@ -125,9 +126,9 @@ const ALL_MENU_ITEMS: MenuItem[] = [
         iconSrc: ReportsSidebarIcon,
         claims: SIDEBAR_SECTION_CLAIMS.reports,
         subItems: [
-            { title: "VA Reports", path: paths.REPORTS.pathName, claims: SIDEBAR_REPORT_ITEM_CLAIMS.vaReports },
-            { title: "Monthly Reports", path: paths.MONTHLY_REPORTS.pathName, claims: SIDEBAR_REPORT_ITEM_CLAIMS.monthlyReports },
-            { title: "Exam Archive", path: paths.EXAM_ARCHIVE.pathName, claims: SIDEBAR_REPORT_ITEM_CLAIMS.examArchive },
+            { title: "VA Reports", path: paths.REPORTS.pathName, claims: SIDEBAR_REPORT_ITEM_CLAIMS.vaReports, icon: Fa4FileExcelOIcon },
+            { title: "Monthly Reports", path: paths.MONTHLY_REPORTS.pathName, claims: SIDEBAR_REPORT_ITEM_CLAIMS.monthlyReports, icon: Fa4FileExcelOIcon },
+            { title: "Exam Archive", path: paths.EXAM_ARCHIVE.pathName, claims: SIDEBAR_REPORT_ITEM_CLAIMS.examArchive, icon: Fa4FileExcelOIcon },
         ],
         match: (pathname) =>
             [paths.REPORTS.pathName, paths.MONTHLY_REPORTS.pathName, paths.EXAM_ARCHIVE.pathName, paths.REWORK_REPORTS.pathName].includes(pathname),
@@ -143,11 +144,13 @@ const ALL_MENU_ITEMS: MenuItem[] = [
                 title: "Travel Instance Claim Report",
                 path: paths.TRAVEL_INSTANCE_CLAIM_REPORT.pathName,
                 claims: SIDEBAR_TRAVEL_ITEM_CLAIMS.travelInstanceClaimReport,
+                icon: Fa4FileExcelOIcon,
             },
             {
                 title: "Travel Payment Upload",
                 path: paths.TRAVEL_PAYMENT_UPLOAD.pathName,
                 claims: SIDEBAR_TRAVEL_ITEM_CLAIMS.travelPaymentUpload,
+                icon: Fa4FileExcelOIcon,
             },
         ],
         match: (pathname) =>
@@ -164,16 +167,19 @@ const ALL_MENU_ITEMS: MenuItem[] = [
                 title: "VBMS Invoice Files",
                 path: paths.VBMS_INVOICE_FILES.pathName,
                 claims: SIDEBAR_BILLING_ITEM_CLAIMS.vbmsInvoiceFiles,
+                icon: Fa4UserIcon,
             },
             {
                 title: "Lab & Non-Lab Price Upload",
                 path: paths.LAB_NON_LAB_PRICE_UPLOAD.pathName,
                 claims: SIDEBAR_BILLING_ITEM_CLAIMS.labNonLabPriceUpload,
+                icon: Fa4UserIcon,
             },
             {
                 title: "Billing Rate Master",
                 path: paths.BILLING_RATE_MASTER.pathName,
                 claims: SIDEBAR_BILLING_ITEM_CLAIMS.billingRateMaster,
+                icon: Fa4UserIcon,
             },
         ],
         match: (pathname) =>
