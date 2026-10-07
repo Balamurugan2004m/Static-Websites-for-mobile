@@ -1,4 +1,3 @@
-import React from "react";
 import { Box, BoxProps } from "@mui/material";
 
 interface Fa4IconProps extends BoxProps {
@@ -38,6 +37,10 @@ const GLYPHS = {
   "flag": {
     "advX": 1792,
     "d": "M320 1280q0 -72 -64 -110v-1266q0 -13 -9.5 -22.5t-22.5 -9.5h-64q-13 0 -22.5 9.5t-9.5 22.5v1266q-64 38 -64 110q0 53 37.5 90.5t90.5 37.5t90.5 -37.5t37.5 -90.5zM1792 1216v-763q0 -25 -12.5 -38.5t-39.5 -27.5q-215 -116 -369 -116q-61 0 -123.5 22t-108.5 48 t-115.5 48t-142.5 22q-192 0 -464 -146q-17 -9 -33 -9q-26 0 -45 19t-19 45v742q0 32 31 55q21 14 79 43q236 120 421 120q107 0 200 -29t219 -88q38 -19 88 -19q54 0 117.5 21t110 47t88 47t54.5 21q26 0 45 -19t19 -45z"
+  },
+  "fileExcelO": {
+    "advX": 1536,
+    "d": "M1468 1156q28 -28 48 -76t20 -88v-1152q0 -40 -28 -68t-68 -28h-1344q-40 0 -68 28t-28 68v1600q0 40 28 68t68 28h896q40 0 88 -20t76 -48zM1024 1400v-376h376q-10 29 -22 41l-313 313q-12 12 -41 22zM1408 -128v1024h-416q-40 0 -68 28t-28 68v416h-768v-1536h1280z M429 106v-106h281v106h-75l103 161q5 7 10 16.5t7.5 13.5t3.5 4h2q1 -4 5 -10q2 -4 4.5 -7.5t6 -8t6.5 -8.5l107 -161h-76v-106h291v106h-68l-192 273l195 282h67v107h-279v-107h74l-103 -159q-4 -7 -10 -16.5t-9 -13.5l-2 -3h-2q-1 4 -5 10q-6 11 -17 23l-106 159h76v107 h-290v-107h68l189 -272l-194 -283h-68z"
   }
 };
 
@@ -80,3 +83,4 @@ export const Fa4CertificateIcon = createIcon("certificate", 1792, "certificate")
 export const Fa4UploadIcon = createIcon("upload", 1664, "upload");
 export const Fa4CalendarIcon = createIcon("calendar", 1664, "calendar");
 export const Fa4FlagIcon = createIcon("flag", 1792, "flag");
+export const Fa4FileExcelOIcon = createIcon("fileExcelO", 1536, "file-excel-o");
