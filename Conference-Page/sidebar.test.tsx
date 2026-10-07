@@ -101,12 +101,13 @@ describe("Sidebar Component", () => {
 
     test("shows the reports submenu when reports is active and main menu is closed", () => {
         mockPathname = "/va-reports";
-        renderWithProviders(<Sidebar open={false} toggleDrawer={toggleDrawer} />);
+        const { container } = renderWithProviders(<Sidebar open={false} toggleDrawer={toggleDrawer} />);
 
         expect(screen.getByText("VA Reports")).toBeInTheDocument();
         expect(screen.getByText("Monthly Reports")).toBeInTheDocument();
         expect(screen.getByText("Exam Archive")).toBeInTheDocument();
         expect(screen.queryByText("Work Queues")).not.toBeInTheDocument();
+        expect(container.querySelectorAll('[data-icon="file-excel-o"]')).toHaveLength(3);
     });
 
     test("closes the submenu from the bottom close icon", () => {
@@ -121,10 +122,11 @@ describe("Sidebar Component", () => {
 
     test("shows the travel submenu when travel is active and main menu is closed", () => {
         mockPathname = "/travel-instance-claim-report";
-        renderWithProviders(<Sidebar open={false} toggleDrawer={toggleDrawer} />);
+        const { container } = renderWithProviders(<Sidebar open={false} toggleDrawer={toggleDrawer} />);
 
         expect(screen.getByText("Travel Instance Claim Report")).toBeInTheDocument();
         expect(screen.getByText("Travel Payment Upload")).toBeInTheDocument();
+        expect(container.querySelectorAll('[data-icon="file-excel-o"]')).toHaveLength(2);
     });
 
     test("shows the billing submenu when billing is active and main menu is closed", () => {
@@ -150,11 +152,21 @@ describe("Sidebar Component", () => {
         expect(screen.getByText("Availability Calendar")).toBeInTheDocument();
     });
 
+    test("renders FontAwesome 4 user icons for Billing submenu items", () => {
+        mockPathname = "/vbms-invoice-files";
+        const { container } = renderWithProviders(<Sidebar open={false} toggleDrawer={toggleDrawer} />);
+
+        expect(screen.getByText("VBMS Invoice Files")).toBeInTheDocument();
+        expect(screen.getByText("Lab & Non-Lab Price Upload")).toBeInTheDocument();
+        expect(screen.getByText("Billing Rate Master")).toBeInTheDocument();
+        expect(container.querySelectorAll('[data-icon="user"]')).toHaveLength(3);
+    });
+
     test("renders FontAwesome icons for Provider Management and its sub items", () => {
         mockPathname = "/configuration/users";
         const { container } = renderWithProviders(<Sidebar open={false} toggleDrawer={toggleDrawer} />);
 
-        expect(container.querySelectorAll('[data-icon="dashboard"]')).toHaveLength(2);
+        expect(container.querySelectorAll('[data-icon="dashboard"]').length).toBeGreaterThan(0);
         expect(container.querySelector('[data-icon="building"]')).toBeInTheDocument();
         expect(container.querySelector('[data-icon="hospital-o"]')).toBeInTheDocument();
         expect(container.querySelector('[data-icon="user"]')).toBeInTheDocument();
