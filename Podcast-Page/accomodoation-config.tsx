@@ -116,7 +116,6 @@ const AccommodationConfig = () => {
             : r
         )
       );
-      dispatch(fetchSpecialAccommodations() as any);
       showToast(
         "The record has been successfully edited.",
         TOAST_TYPES.SUCCESS,
