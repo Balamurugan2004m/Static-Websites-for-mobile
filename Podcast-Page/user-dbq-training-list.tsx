@@ -329,10 +329,11 @@ const UserDbqTrainingList = () => {
                 <Button
                   variant="contained"
                   onClick={handleAddUser}
-                  startIcon={isCompactToolbar && !isMobile ? undefined : <Add />}
+                  startIcon={<Add sx={{ fontSize: "18px !important" }} />}
                   size="medium"
                   sx={{
                     height: 45,
+                    fontSize: "14px",
                     borderRadius: "10px",
                     minWidth: isMobile ? "100%" : "auto",
                     px: 1.5,
@@ -340,10 +341,13 @@ const UserDbqTrainingList = () => {
                     fontWeight: 400,
                     whiteSpace: "nowrap",
                     backgroundColor: P.primary,
+                    "& .MuiButton-startIcon": {
+                      mr: 0.3,
+                    },
                     "&:hover": { backgroundColor: P.primaryHover },
                   }}
                 >
-                  {isCompactToolbar && !isMobile ? <Add fontSize="small" /> : "Add User"}
+                  Add User
                 </Button>
               </AppTooltip>
             </Stack>
