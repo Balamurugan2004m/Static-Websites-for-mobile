@@ -1375,17 +1375,23 @@ const ProviderUserDetails: React.FC = () => {
     }, [formData?.RecertificationCourses, formData?.RequiredCertificationCourses, formData?.SpecialtyCourses, isCreate]);
 
     useEffect(() => {
-        const isMissingLookups =
-            !professionalTitles?.length ||
-            !specialties?.length ||
-            !affiliations?.length ||
-            !credentialStatuses?.length;
+        const hasData =
+            affiliations?.length > 0 ||
+            userRoles.length > 0 ||
+            facility?.length > 0 ||
+            allStates?.length > 0 ||
+            specialties?.length > 0 ||
+            professionalTitles?.length > 0 ||
+            otherFacilities?.length > 0 ||
+            credentialStatuses?.length > 0 ||
+            schedulingType?.length > 0 ||
+            organizations?.length > 0;
 
-        if (isMissingLookups && !providerLookupFetchStartedRef.current) {
+        if (!hasData || (!isCreate && !providerLookupFetchStartedRef.current)) {
             providerLookupFetchStartedRef.current = true;
             dispatch(fetchProviderUserData() as any);
         }
-    }, [dispatch, affiliations?.length, credentialStatuses?.length, professionalTitles?.length, specialties?.length]);
+    }, [dispatch, affiliations?.length, userRoles.length, facility?.length, allStates?.length, specialties?.length, professionalTitles?.length, schedulingType?.length, organizations?.length, otherFacilities?.length, credentialStatuses?.length]);
 
     useEffect(() => {
         let isMounted = true;
@@ -1899,7 +1905,7 @@ const ProviderUserDetails: React.FC = () => {
                 renderProviderField(fieldConfig, {
                     disabled:
                         !isCreate &&
-                        (fieldConfig.field === "UserNPINumber" || fieldConfig.field === "UserSignedDate"),
+                        ( fieldConfig.field === "UserSignedDate"),
                 })
             );
     }, [renderProviderField, isCreate]);
