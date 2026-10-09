@@ -1420,8 +1420,9 @@ const ProviderUserDetails: React.FC = () => {
         const loadUserData = async () => {
             setLoading(true);
             try {
+                const forceFetch = Boolean((location.state as any)?.forceFetch);
                 const cachedUser = providerUsersByName[userId]?.data;
-                if (cachedUser && ((cachedUser as any)?._dbqsFetched || (cachedUser.UserSupplementalMapping?.length || 0) > 0)) {
+                if (!forceFetch && cachedUser && ((cachedUser as any)?._dbqsFetched || (cachedUser.UserSupplementalMapping?.length || 0) > 0)) {
                     if (isMounted) {
                         applyProviderUserData(cachedUser);
                         setLoading(false);
@@ -1429,22 +1430,81 @@ const ProviderUserDetails: React.FC = () => {
                     return;
                 }
 
+                if (forceFetch) {
+                    inFlightUserDetailsRequests.delete(userId);
+                    if (userDetailsRequestRef.current?.userId === userId) {
+                        userDetailsRequestRef.current = null;
+                    }
+                }
+
                 let request =
-                    userDetailsRequestRef.current?.userId === userId
+                    !forceFetch && userDetailsRequestRef.current?.userId === userId
                         ? userDetailsRequestRef.current.request
-                        : inFlightUserDetailsRequests.get(userId);
+                        : !forceFetch
+                        ? inFlightUserDetailsRequests.get(userId)
+                        : null;
+
                 if (!request) {
                     request = (async () => {
                         const isNumericRouteId = !isNaN(Number(userId)) && Number(userId) > 0;
-                        const accountUserData = await getAccountUserByUsername(userId).catch(() => null);
-                        const providerUserId = Number(
-                            accountUserData?.UserId ??
-                            (accountUserData as any)?.Id ??
-                            (accountUserData as any)?.userId ??
-                            (isNumericRouteId ? Number(userId) : 0)
-                        );
-                        const providerUserData =
-                            providerUserId > 0 ? await getProviderUserById(providerUserId).catch(() => ({} as any)) : {};
+                        const locStateId = Number((location.state as any)?.providerUserId);
+                        const tab = openTabs?.find((t) => t.userName === userId);
+                        const tabId = tab ? Number(tab.id) : 0;
+                        const knownProviderUserId =
+                            Number.isFinite(locStateId) && locStateId > 0
+                                ? locStateId
+                                : Number.isFinite(tabId) && tabId > 0
+                                ? tabId
+                                : isNumericRouteId
+                                ? Number(userId)
+                                : 0;
+
+                        // 1. Account GetUser promise (requires userName)
+                        const accountPromise = getAccountUserByUsername(userId).catch((err) => {
+                            console.error("Failed to fetch account user by username:", err);
+                            return null;
+                        });
+
+                        // 2. Provider GetUser promise (requires numeric userId)
+                        let providerPromise: Promise<any>;
+                        if (knownProviderUserId > 0) {
+                            providerPromise = getProviderUserById(knownProviderUserId).catch((err) => {
+                                console.error("Failed to fetch provider user by id:", err);
+                                return {} as any;
+                            });
+                        } else {
+                            providerPromise = accountPromise.then((accData) => {
+                                const resolvedId = Number(
+                                    accData?.UserId ??
+                                    (accData as any)?.Id ??
+                                    (accData as any)?.userId ??
+                                    0
+                                );
+                                return resolvedId > 0
+                                    ? getProviderUserById(resolvedId).catch((err) => {
+                                          console.error("Failed to fetch provider user by id (fallback):", err);
+                                          return {} as any;
+                                      })
+                                    : ({} as any);
+                            });
+                        }
+
+                        // Trigger and await both in parallel
+                        const [accountUserData, providerUserData] = await Promise.all([
+                            accountPromise,
+                            providerPromise,
+                        ]);
+
+                        const resolvedProviderUserId =
+                            knownProviderUserId > 0
+                                ? knownProviderUserId
+                                : Number(
+                                      accountUserData?.UserId ??
+                                      (accountUserData as any)?.Id ??
+                                      (accountUserData as any)?.userId ??
+                                      (providerUserData as any)?.UserId ??
+                                      0
+                                  );
 
                         const accountDoB =
                             (accountUserData as any)?.DoB ??
@@ -1524,7 +1584,7 @@ const ProviderUserDetails: React.FC = () => {
                             ...ProviderUserInitialState,
                             ...accountUserData,
                             ...providerUserData,
-                            UserId: providerUserId || (providerUserData as any)?.UserId || null,
+                            UserId: resolvedProviderUserId || (providerUserData as any)?.UserId || (accountUserData as any)?.UserId || null,
                             Gender: genderRaw,
                             VBATrainId: vbaTrainIdRaw,
                             VendorId: vendorIdRaw,
@@ -1568,7 +1628,7 @@ const ProviderUserDetails: React.FC = () => {
             isMounted = false;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId]);
+    }, [userId, location.key]);
 
     useEffect(() => {
         const handleResize = () => {
@@ -1958,8 +2018,29 @@ const ProviderUserDetails: React.FC = () => {
     const executeTabClick = useCallback((username: string) => {
         executeCancel();
         dispatch(setSelectedTab({ username }));
-        navigate(`/provider-management/users/${username}`);
-    }, [executeCancel, dispatch, navigate]);
+        const tab = openTabs?.find((t) => t.userName === username);
+        const numericTabId = tab ? Number(tab.id) : 0;
+        navigate(`/provider-management/users/${username}`, {
+            state: {
+                providerUserId: Number.isFinite(numericTabId) && numericTabId > 0 ? numericTabId : undefined,
+                forceFetch: true,
+            },
+        });
+    }, [executeCancel, dispatch, navigate, openTabs]);
+
+    const handleActiveTabRefresh = useCallback(() => {
+        if (!userId) return;
+        dispatch(deleteAccountUserByUsername({ username: userId }));
+        const tab = openTabs?.find((t) => t.userName === userId);
+        const numericTabId = tab ? Number(tab.id) : Number(formData?.UserId) || 0;
+        navigate(`/provider-management/users/${userId}`, {
+            state: {
+                providerUserId: Number.isFinite(numericTabId) && numericTabId > 0 ? numericTabId : undefined,
+                forceFetch: true,
+            },
+            replace: true,
+        });
+    }, [userId, dispatch, navigate, openTabs, formData?.UserId]);
 
     const handleTabClick = useCallback((username: string) => {
         if (username === userId) return;
@@ -2094,9 +2175,10 @@ const ProviderUserDetails: React.FC = () => {
                 selectedTabs={selectedTab}
                 handleTabClick={handleTabsHeaderTabClick}
                 handleTabTitleClick={handleTabTitleClick}
+                handleRefreshClick={handleActiveTabRefresh}
             />
         );
-    }, [isCreate, openTabs, styles, selectedTab, handleTabTitleClick, handleCancel, chipColor, theme.palette.text.secondary, handleTabsHeaderCloseTab, handleTabsHeaderTabClick, onCreateRefreshPromptOpen, onCreateTabCloseClick, onCreateAddUserTextClick]);
+    }, [isCreate, openTabs, styles, selectedTab, handleTabTitleClick, handleCancel, chipColor, theme.palette.text.secondary, handleTabsHeaderCloseTab, handleTabsHeaderTabClick, handleActiveTabRefresh, onCreateRefreshPromptOpen, onCreateTabCloseClick, onCreateAddUserTextClick]);
 
     const isClcwSme = !!formData?.IsCLCW_SME;
     const is1151Sme = !!(formData as { Is1151_SME?: boolean })?.Is1151_SME;
