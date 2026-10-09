@@ -147,15 +147,28 @@ const ProviderUsers = () => {
 
   const openUserDetails = useCallback(
     (row: any) => {
+      const userName = row?.UserName ?? row?.userName ?? "";
+      if (!userName) {
+        showToast("Username not found for selected user", TOAST_TYPES.WARNING);
+        return;
+      }
+      const rawId = row?.UserId ?? row?.userId ?? row?.id ?? row?.Id;
+      const numericId = Number(rawId);
+      dispatch(deleteAccountUserByUsername({ username: userName }));
       dispatch(
         addProviderUserTab({
-          id: row.id,
-          email: row.Email ?? "",
-          userName: row.UserName ?? "",
+          id: Number.isFinite(numericId) && numericId > 0 ? numericId : rawId || userName,
+          email: row?.Email ?? "",
+          userName: userName,
         })
       );
-      dispatch(setSelectedTab({ username: row.UserName ?? "" }));
-      navigate(`/provider-management/users/${row.UserName}`);
+      dispatch(setSelectedTab({ username: userName }));
+      navigate(`/provider-management/users/${userName}`, {
+        state: {
+          providerUserId: Number.isFinite(numericId) && numericId > 0 ? numericId : undefined,
+          forceFetch: true,
+        },
+      });
     },
     [dispatch, navigate]
   );
@@ -440,7 +453,7 @@ const ProviderUsers = () => {
       })
       .map((user) => ({
         ...user,
-        id: user.UserId,
+        id: user.UserId ?? user.Id,
       }))
       .slice(0, MAX_RESULTS);
   }, [providerUsersData, hasSearchFilter]);
@@ -577,7 +590,14 @@ const ProviderUsers = () => {
 
   const handleTabClick = (username: string) => {
     dispatch(setSelectedTab({ username }));
-    navigate(`/provider-management/users/${username}`);
+    const tab = openTabs?.find((t: any) => t.userName === username);
+    const numericTabId = tab ? Number(tab.id) : 0;
+    navigate(`/provider-management/users/${username}`, {
+      state: {
+        providerUserId: Number.isFinite(numericTabId) && numericTabId > 0 ? numericTabId : undefined,
+        forceFetch: true,
+      },
+    });
   };
 
   const handleTabTitleClick = () => {
