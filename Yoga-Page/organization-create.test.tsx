@@ -1,544 +1,515 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { ThemeProvider, createTheme } from "@mui/material/styles";
-import { useDispatch, useSelector } from "react-redux";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Box,
+  Button,
+  Checkbox,
+  FormControlLabel,
+  FormHelperText,
+  IconButton,
+  MenuItem,
+  Select,
+  Typography,
+  useTheme,
+} from "@mui/material";
+import { CharacterCountInput } from "../../ui/character-count-input";
+import { ORG_FIELD_MAX_LENGTHS } from "../../constants/organization-limits";
 import { useNavigate } from "react-router";
+import { useDispatch, useSelector } from "react-redux";
+import { showToast } from "../../utils/toast";
+import { TOAST_TYPES } from "../../types/toast-types";
 
-import OrganizationCreate from "./organization-create";
+import { RootState } from "../../store";
+import ContentBox from "../../layouts/content-box";
+import TabsHeader from "../../components/users/components/tabs-header";
+import AppTooltip from "../../components/app-tooltip";
+import { getStyles } from "../../components/users/utils/styles";
+import { THEME_PRIMITIVES } from "../../theme";
+import { paths } from "../../constants/paths";
+import {
+  OrganizationDto,
+  addOrganization,
+  getOrganizationContractStatuses,
+} from "../../services/provider-organization";
+import {
+  CredentialStatusLookupValue,
+} from "../../services/provider-users";
+import { deleteOrgTab } from "../../store/slice/ui-slice";
+import RefreshIcon from "../../assets/icons/refresh-blue.svg";
+import CaseTabCloseIcon from "../../assets/icons/case-tab-close.svg";
 
-// ─── Theme wrapper ────────────────────────────────────────────────────────────
-const renderWithTheme = (ui: React.ReactElement, mode: "light" | "dark" = "light") => {
-  const theme = createTheme({ palette: { mode, primary: { main: "#244794" } } });
-  return render(<ThemeProvider theme={theme}>{ui}</ThemeProvider>);
+const P = THEME_PRIMITIVES;
+
+import {
+  validateOrganizationField,
+  validateOrganizationForm,
+} from "../../utils/validation-utils";
+
+type FormData = {
+  name: string;
+  emailAddress: string;
+  phoneNumber: string;
+  altPhoneNumber: string;
+  faxNumber: string;
+  taxIdNumber: string;
+  npiNumber: string;
+  address1: string;
+  address2: string;
+  city: string;
+  county: string;
+  state: string;
+  zip: string;
+  isInfinite: boolean;
+  isPayable: boolean;
+  cmsRatePercent: string;
+  contractStatus: string;
 };
 
-// ─── Redux ────────────────────────────────────────────────────────────────────
-jest.mock("react-redux", () => ({ useSelector: jest.fn(), useDispatch: jest.fn() }));
+const INITIAL: FormData = {
+  name: "", emailAddress: "", phoneNumber: "", altPhoneNumber: "",
+  faxNumber: "", taxIdNumber: "", npiNumber: "",
+  address1: "", address2: "", city: "", county: "", state: "", zip: "",
+  isInfinite: false, isPayable: false, cmsRatePercent: "", contractStatus: "",
+};
 
-// ─── Router ───────────────────────────────────────────────────────────────────
-jest.mock("react-router", () => ({ useNavigate: jest.fn() }));
+const BASE_PATH = paths.PROVIDER_MANAGEMENT_ORG.pathName;
 
-// ─── Store ────────────────────────────────────────────────────────────────────
-jest.mock("../../store", () => ({}));
+const OrganizationCreate = () => {
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const theme = useTheme();
+  const [formData, setFormData] = useState<FormData>(INITIAL);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [credentialStatuses, setCredentialStatuses] = useState<CredentialStatusLookupValue[]>([]);
+  const [windowWidth] = useState(window.innerWidth);
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
-jest.mock("react-toastify", () => ({
-  toast: { success: jest.fn(), error: jest.fn() },
-}));
+  useEffect(() => {
+    getOrganizationContractStatuses()
+      .then(setCredentialStatuses)
+      .catch(() => {});
+  }, []);
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-jest.mock("../../services/provider-organization", () => ({
-  CONTRACT_STATUS_OPTIONS: ["Active", "Inactive", "Contract in discussion"],
-  createOrganization: jest.fn(),
-  addOrganization: jest.fn().mockResolvedValue({}),
-  getOrganizationContractStatuses: jest.fn().mockResolvedValue([
-    { LookupValueId: 1, Name: "Active" },
-    { LookupValueId: 2, Name: "Inactive" },
-  ]),
-}));
+  const mode = useSelector((state: RootState) => state.theme.mode);
+  const isDarkMode = mode === "dark";
+  const openTabs = useSelector((state: RootState) => state.ui.orgTabs);
+  const openTabsRef = useRef(openTabs);
+  openTabsRef.current = openTabs;
 
-jest.mock("../../services/provider-users", () => ({
-  getCredentialStatus: jest.fn().mockResolvedValue([]),
-}));
+  const styles = useMemo(() => getStyles(theme, windowWidth), [theme, windowWidth]);
+  const chipColor = theme.custom?.text?.chip?.color ?? theme.palette.primary.main;
+  const activeTabColor = isDarkMode ? P.white : chipColor;
 
-// ─── Redux actions ────────────────────────────────────────────────────────────
-jest.mock("../../store/slice/ui-slice", () => ({
-  addOrgTab:    jest.fn((p: any) => ({ type: "addOrgTab",    payload: p })),
-  deleteOrgTab: jest.fn((id: any) => ({ type: "deleteOrgTab", payload: id })),
-}));
+  const handleTabClick = useCallback(
+    (tabLabel: string | number) => {
+      const tab = openTabsRef.current.find((t) => t.userName === String(tabLabel));
+      if (tab) navigate(`/provider-management/provider-organization/${tab.id}`);
+    },
+    [navigate]
+  );
 
-// ─── Paths ────────────────────────────────────────────────────────────────────
-jest.mock("../../constants/paths", () => ({
-  paths: {
-    PROVIDER_MANAGEMENT_ORG:        { pathName: "/provider-management/provider-organization" },
-    PROVIDER_MANAGEMENT_ORG_CREATE: { pathName: "/provider-management/provider-organization/create" },
-  },
-}));
+  const handleTabTitleClick = useCallback(() => navigate(BASE_PATH), [navigate]);
 
-// ─── Shared component mocks ───────────────────────────────────────────────────
-jest.mock("../../components/users/components/tabs-header", () => ({
-  __esModule: true,
-  default: ({ openTabs, onCloseTab, handleTabTitleClick, handleTabClick, children }: any) => (
-    <div data-testid="tabs-header">
-      {children}
-      {openTabs?.map((t: any) => (
-        <button key={t.id} data-testid={`close-tab-${t.id}`} onClick={() => onCloseTab?.(String(t.id))}>
-          close
-        </button>
-      ))}
-      <button data-testid="tab-title-click" onClick={handleTabTitleClick}>Base</button>
-      <button data-testid="tab-click" onClick={() => handleTabClick?.("Corp A")}>Tab</button>
-    </div>
-  ),
-}));
+  const handleOnCloseTab = useCallback(
+    (id: string | number) => { dispatch(deleteOrgTab(String(id))); },
+    [dispatch]
+  );
 
-jest.mock("../../components/page-title-chip", () => ({
-  __esModule: true,
-  default: ({ title }: any) => <div data-testid="page-title-chip">{title}</div>,
-}));
+  const handleCreateTabClose = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigate(BASE_PATH);
+    },
+    [navigate]
+  );
 
-jest.mock("../../layouts/content-box", () => ({
-  __esModule: true,
-  default: ({ children }: any) => <div data-testid="content-box">{children}</div>,
-}));
+  const handleCreateTabRefresh = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setFormData(INITIAL);
+    setFormErrors({});
+  }, []);
 
-jest.mock("../../components/users/utils/styles", () => ({
-  getStyles: () => ({}),
-}));
+  const validateSingleField = useCallback((field: keyof FormData, value: string | boolean): string => {
+    return validateOrganizationField(field, value);
+  }, []);
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-// const CREATED_ORG = {
-//   id: "99",
-//   name: "New Corp",
-//   emailAddress: "new@corp.com",
-//   phoneNumber: "555",
-//   altPhoneNumber: "",
-//   faxNumber: "000",
-//   taxIdNumber: "TX",
-//   npiNumber: "NPI",
-//   address1: "1 St",
-//   address2: "",
-//   city: "City",
-//   county: "Co",
-//   state: "TX",
-//   zip: "00000",
-//   isInfinite: false,
-//   isPayable: false,
-//   cmsRatePercent: "80",
-//   contractStatus: "Active",
-//   serviceFacility: 0,
-//   status: "Active",
-//   facilities: [],
-//   staff: [],
-// };
+  const validateForm = useCallback(() => {
+    const result = validateOrganizationForm(formData);
+    setFormErrors(result.errors);
+    return result;
+  }, [formData]);
 
-// ─────────────────────────────────────────────────────────────────────────────
-describe("OrganizationCreate", () => {
-  const { addOrganization } = jest.requireMock("../../services/provider-organization");
-  const { deleteOrgTab } = jest.requireMock("../../store/slice/ui-slice");
-  const { toast } = jest.requireMock("react-toastify");
+  // ─── Handlers ────────────────────────────────────────────────────────────────
 
-  const mockDispatch = jest.fn();
-  const mockNavigate = jest.fn();
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    (useDispatch as any).mockReturnValue(mockDispatch);
-    (useNavigate as any).mockReturnValue(mockNavigate);
-    (useSelector as any).mockImplementation((fn: any) =>
-      fn({ theme: { mode: "light" }, ui: { orgTabs: [] } })
-    );
-  });
-
-  const fillValidForm = () => {
-    fireEvent.change(screen.getByPlaceholderText("Organization Name"), { target: { value: "New Corp" } });
-    fireEvent.change(screen.getByPlaceholderText("Email Address"), { target: { value: "new@corp.com" } });
-    fireEvent.change(screen.getByPlaceholderText("Phone Number"), { target: { value: "1234567890" } });
-    fireEvent.change(screen.getByPlaceholderText("Fax Number"), { target: { value: "1234567890" } });
-    fireEvent.change(screen.getByPlaceholderText("Address 1"), { target: { value: "123 Main St" } });
-    fireEvent.change(screen.getByPlaceholderText("City"), { target: { value: "City" } });
-    fireEvent.change(screen.getByPlaceholderText("County"), { target: { value: "County" } });
-    fireEvent.change(screen.getByPlaceholderText("State"), { target: { value: "TX" } });
-    fireEvent.change(screen.getByPlaceholderText("Zip Code"), { target: { value: "12345" } });
-    fireEvent.change(screen.getByPlaceholderText("CMS Rate"), { target: { value: "80" } });
+  const handleBlur = (field: keyof FormData) => {
+    const err = validateSingleField(field, formData[field]);
+    setFormErrors((prev) => {
+      if (err) {
+        return { ...prev, [field]: err };
+      }
+      if (prev[field]) {
+        const rest = { ...prev };
+        delete rest[field];
+        return rest;
+      }
+      return prev;
+    });
   };
 
-  // ─── Initial render ────────────────────────────────────────────────────────
-
-  it("renders without crashing", () => {
-    renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByTestId("tabs-header")).toBeInTheDocument();
-  });
-
-  it("displays 'New Organization' create tab with refresh and close", () => {
-    renderWithTheme(<OrganizationCreate />);
-    expect(screen.getAllByText("New Organization").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByAltText("Refresh")).toBeInTheDocument();
-    expect(screen.getByLabelText("Close tab")).toBeInTheDocument();
-  });
-
-  it("renders 'Save' button", () => {
-    renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByRole("button", { name: /^save$/i })).toBeInTheDocument();
-  });
-
-  it("renders 'Cancel' button", () => {
-    renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
-  });
-
-  it("renders Name input field", () => {
-    renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByPlaceholderText("Organization Name")).toBeInTheDocument();
-  });
-
-  it("renders Email Address input", () => {
-    renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByPlaceholderText("Email Address")).toBeInTheDocument();
-  });
-
-  it("renders City input", () => {
-    renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByPlaceholderText("City")).toBeInTheDocument();
-  });
-
-  // ─── Cancel ────────────────────────────────────────────────────────────────
-
-  it("Cancel navigates to org list path", () => {
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
-    expect(mockNavigate).toHaveBeenCalledWith("/provider-management/provider-organization");
-  });
-
-  // ─── Save Validation & Submission ──────────────────────────────────────────
-
-  it("Save shows error toast when required fields are missing", async () => {
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
+  const handleChange = (field: keyof FormData, value: string | boolean) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormErrors((prev) => {
+      if (!prev[field]) return prev;
+      const err = validateSingleField(field, value);
+      if (err) {
+        return { ...prev, [field]: err };
+      }
+      const rest = { ...prev };
+      delete rest[field];
+      return rest;
     });
-    expect(addOrganization).not.toHaveBeenCalled();
-  });
+  };
 
-  it("Save validates required fields", async () => {
-    (addOrganization as jest.Mock).mockResolvedValue({});
-    renderWithTheme(<OrganizationCreate />);
-    fillValidForm();
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
-    });
-  });
+  const handleSave = async () => {
+    const { isValid, firstErrorField, errors } = validateForm();
+    if (!isValid) {
+      showToast(Object.values(errors)[0] || "Please fill all required fields", TOAST_TYPES.ERROR);
+      if (firstErrorField) {
+        const el = document.querySelector(
+          `[name="${firstErrorField}"], [id="${firstErrorField}"], [data-field="${firstErrorField}"]`
+        ) as HTMLElement | null;
+        el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+        setTimeout(() => el?.focus?.(), 250);
+      }
+      return;
+    }
 
-  it("Save failure shows error toast", async () => {
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalled()
+    setSaving(true);
+    try {
+      const dto: OrganizationDto = {
+        Id: 0,
+        OrganizationName: formData.name.trim(),
+        OrganizationCounty: formData.county.trim(),
+        OrganizationAddress1: formData.address1.trim(),
+        OrganizationAddress2: formData.address2.trim(),
+        OrganizationCity: formData.city.trim(),
+        OrganizationState: formData.state.trim(),
+        OrganizationZip: formData.zip.trim(),
+        OrganizationTaxIdNumber: formData.taxIdNumber.trim(),
+        OrganizationNPINumber: formData.npiNumber.trim(),
+        OrganizationPrimaryPhoneNumber: formData.phoneNumber.trim(),
+        OrganizationAlternatePhoneNumber: formData.altPhoneNumber.trim(),
+        OrganizationEmailId: formData.emailAddress.trim(),
+        OrganizationFaxNumber: formData.faxNumber.trim(),
+        IsOrganizationInfinite: formData.isInfinite,
+        IsPayableToOrg: formData.isPayable,
+        ServiceFacility: 0,
+        ProfessionalStaff: 0,
+        CMSRatePercent: Number(formData.cmsRatePercent),
+        OrganizationStatusId:
+          credentialStatuses.find((s) => s.Name === formData.contractStatus)?.LookupValueId ?? 0,
+      };
+      await addOrganization(dto);
+      showToast("Organization has been added successfully.", TOAST_TYPES.SUCCESS);
+      navigate(BASE_PATH);
+    } catch {
+      showToast("Failed to create organization.", TOAST_TYPES.ERROR);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ─── Styles ───────────────────────────────────────────────────────────────────
+
+  const inputSx = useCallback(
+    (hasError: boolean) => ({
+      width: "100%",
+      height: 36,
+      borderRadius: "8px",
+      fontSize: 14,
+      backgroundColor: isDarkMode ? P.secondaryElevatedDark : P.white,
+      "& .MuiOutlinedInput-input": {
+        padding: "8px 12px",
+        fontSize: 14,
+        color: isDarkMode ? P.white : P.black,
+        "&::placeholder": { color: isDarkMode ? P.lightMutedText : P.labelMuted, opacity: 1 },
+      },
+      "& .MuiOutlinedInput-input[type=number]": {
+        paddingRight: "2px",
+        height: "100%",
+        boxSizing: "border-box",
+      },
+      "& input[type=number]::-webkit-inner-spin-button": {
+        height: "20px",
+        margin: "auto 4px auto 0",
+        opacity: 1,
+        cursor: "pointer",
+      },
+      "& .MuiOutlinedInput-notchedOutline": {
+        borderColor: hasError
+          ? theme.palette.error.main
+          : isDarkMode ? P.strokeDark : P.stroke,
+      },
+    }),
+    [isDarkMode, theme.palette.error.main]
+  );
+
+  const labelSx = { fontSize: 13, color: isDarkMode ? P.lightMutedText : P.uploadButtonBg, mb: 0.25 };
+  const fieldWrapSx = { display: "flex", flexDirection: "column" as const, gap: 0.25, mb: 1.5 };
+
+  const renderField = (
+    label: string,
+    field: keyof FormData,
+    placeholder?: string,
+    required = false,
+    type?: string,
+    numericOnly = false,
+    allowHyphen = false
+  ) => {
+    const error = formErrors[field];
+    const maxLength = ORG_FIELD_MAX_LENGTHS[field];
+    return (
+      <Box sx={fieldWrapSx}>
+        <Typography sx={{ ...labelSx, display: "flex", alignItems: "center", gap: "3px" }}>
+          {label}
+          {required && <Box component="span" sx={{ color: P.dangerText }}>*</Box>}
+        </Typography>
+        <CharacterCountInput
+          id={field}
+          name={field}
+          type={type}
+          numericOnly={numericOnly}
+          allowHyphen={allowHyphen}
+          inputProps={{ "data-field": field, "data-dotphrase": "false" }}
+          value={(formData[field] as string) ?? ""}
+          onChange={(e) => handleChange(field, e.target.value)}
+          onBlur={() => handleBlur(field)}
+          placeholder={placeholder ?? `Type ${label}`}
+          error={Boolean(error)}
+          sx={inputSx(Boolean(error))}
+          maxLength={maxLength}
+          helperText={
+            error ? (
+              <FormHelperText error sx={{ mx: 0, fontSize: 11, mt: 0 }}>
+                {error}
+              </FormHelperText>
+            ) : undefined
+          }
+        />
+      </Box>
     );
-  });
-
-  it("Save failure does not navigate away", async () => {
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() => expect(toast.error).toHaveBeenCalled());
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  // ─── Tab operations ────────────────────────────────────────────────────────
-
-  it("closing a tab dispatches deleteOrgTab", () => {
-    (useSelector as any).mockImplementation((fn: any) =>
-      fn({
-        theme: { mode: "light" },
-        ui: { orgTabs: [{ id: "5", email: "", userName: "Corp A" }] },
-      })
-    );
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.click(screen.getByTestId("close-tab-5"));
-    expect(mockDispatch).toHaveBeenCalledWith(deleteOrgTab(expect.any(String)));
-  });
-
-  it("clicking tab title navigates to base path", () => {
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.click(screen.getByTestId("tab-title-click"));
-    expect(mockNavigate).toHaveBeenCalledWith("/provider-management/provider-organization");
-  });
-
-  // ─── Dark mode ─────────────────────────────────────────────────────────────
-
-  it("renders correctly in dark mode", () => {
-    (useSelector as any).mockImplementation((fn: any) =>
-      fn({ theme: { mode: "dark" }, ui: { orgTabs: [] } })
-    );
-    renderWithTheme(<OrganizationCreate />, "dark");
-    expect(screen.getByTestId("tabs-header")).toBeInTheDocument();
-  });
-
-  // ─── handleTabClick ────────────────────────────────────────────────────────
-
-  it("handleTabClick navigates to org detail URL when matching tab exists", () => {
-    (useSelector as any).mockImplementation((fn: any) =>
-      fn({
-        theme: { mode: "light" },
-        ui: { orgTabs: [{ id: "5", email: "", userName: "Corp A" }] },
-      })
-    );
-    renderWithTheme(<OrganizationCreate />);
-    // The mock button calls handleTabClick("Corp A"); tab with userName="Corp A" id="5"
-    fireEvent.click(screen.getByTestId("tab-click"));
-    expect(mockNavigate).toHaveBeenCalledWith(
-      "/provider-management/provider-organization/5"
-    );
-  });
-
-  it("handleTabClick does nothing when no tab matches the label", () => {
-    // openTabs is empty — no match for "Corp A"
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.click(screen.getByTestId("tab-click"));
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  // ─── handleChange boolean (checkbox) ──────────────────────────────────────
-
-  it("checking Is Infinite checkbox updates form state", () => {
-    renderWithTheme(<OrganizationCreate />);
-    // isInfinite and isPayable are the only checkboxes on this page
-    const [isInfiniteCheckbox] = screen.getAllByRole("checkbox");
-    expect(isInfiniteCheckbox).not.toBeChecked();
-    fireEvent.click(isInfiniteCheckbox);
-    expect(isInfiniteCheckbox).toBeChecked();
-  });
-
-  it("checking Is Payable checkbox updates form state", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const checkboxes = screen.getAllByRole("checkbox");
-    const isPayableCheckbox = checkboxes[1];
-    expect(isPayableCheckbox).not.toBeChecked();
-    fireEvent.click(isPayableCheckbox);
-    expect(isPayableCheckbox).toBeChecked();
-  });
-
-  // ─── renderField required asterisk ────────────────────────────────────────
-
-  it("required fields render an asterisk indicator", () => {
-    renderWithTheme(<OrganizationCreate />);
-    // Several fields use required=true; the asterisk is a * span inside the label.
-    // There should be multiple asterisk spans rendered.
-   // const asterisks = document.querySelectorAll("span[style]");
-    // Simply verify at least one required field is present by checking the Name placeholder
-    expect(screen.getByPlaceholderText("Organization Name")).toBeInTheDocument();
-    // The Name label should appear alongside its asterisk — both rendered via renderField
-    expect(screen.getByText("Name")).toBeInTheDocument();
-  });
-
-  // ─── formData.name drives header title ────────────────────────────────────
-
-  it("header shows 'New Organization' when name is empty", () => {
-    renderWithTheme(<OrganizationCreate />);
-    // Create tab AND the form card header both show "New Organization" when name is ""
-    expect(screen.getAllByText("New Organization").length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("header title updates to reflect typed org name", () => {
-    renderWithTheme(<OrganizationCreate />);
-    fireEvent.change(screen.getByPlaceholderText("Organization Name"), {
-      target: { value: "Acme Labs" },
-    });
-    expect(screen.getByText("Acme Labs")).toBeInTheDocument();
-  });
-
-  // ─── Character counter & Max length validation ──────────────────────────────
-
-  it("shows character counter badge on input focus and hides on blur", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const nameInput = screen.getByPlaceholderText("Organization Name");
-
-    expect(screen.queryByTestId("char-counter-badge")).not.toBeInTheDocument();
-
-    fireEvent.focus(nameInput);
-    const badge = screen.getByTestId("char-counter-badge");
-    expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent("(Characters 0/45)");
-    expect(badge).toHaveStyle({ backgroundColor: "#337ab7" });
-
-    fireEvent.blur(nameInput);
-    expect(screen.queryByTestId("char-counter-badge")).not.toBeInTheDocument();
-  });
-
-  it("turns character counter badge red when limit is reached", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const nameInput = screen.getByPlaceholderText("Organization Name");
-
-    fireEvent.focus(nameInput);
-    fireEvent.change(nameInput, { target: { value: "A".repeat(45) } });
-
-    const badge = screen.getByTestId("char-counter-badge");
-    expect(badge).toHaveTextContent("(Characters 45/45)");
-    expect(badge).toHaveStyle({ backgroundColor: "#d9534f" });
-  });
-
-  it("restricts excessive input beyond maxLength", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const nameInput = screen.getByPlaceholderText("Organization Name");
-
-    fireEvent.change(nameInput, { target: { value: "A".repeat(100) } });
-    expect((nameInput as HTMLInputElement).value.length).toBe(45);
-  });
-
-  // ─── Numeric Fields & type="number" ──────────────────────────────────────────
-
-  it("configures numeric and text fields appropriately", () => {
-    renderWithTheme(<OrganizationCreate />);
-
-    const phoneInput = screen.getByPlaceholderText("Phone Number");
-    const altPhoneInput = screen.getByPlaceholderText("Alternate Number");
-    const faxInput = screen.getByPlaceholderText("Fax Number");
-    const taxIdInput = screen.getByPlaceholderText("Tax ID Number");
-    const npiInput = screen.getByPlaceholderText("NPI Number");
-    const zipInput = screen.getByPlaceholderText("Zip Code");
-    const cmsRateInput = screen.getByPlaceholderText("CMS Rate");
-
-    expect(phoneInput).toHaveAttribute("type", "number");
-    expect(altPhoneInput).toHaveAttribute("type", "number");
-    expect(faxInput).toHaveAttribute("type", "number");
-    expect(npiInput).toHaveAttribute("type", "number");
-    expect(cmsRateInput).toHaveAttribute("type", "number");
-    // Tax ID and Zip should allow text with hyphens
-    expect(taxIdInput).not.toHaveAttribute("type", "number");
-    expect(zipInput).not.toHaveAttribute("type", "number");
-  });
-
-  it("restricts excessive numeric input beyond maxLength on Zip", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const zipInput = screen.getByPlaceholderText("Zip Code") as HTMLInputElement;
-
-    fireEvent.change(zipInput, { target: { value: "12345-6789000" } });
-    expect(zipInput.value).toBe("12345-6789");
-  });
-
-  it("validates Tax ID format when entered", async () => {
-    renderWithTheme(<OrganizationCreate />);
-    fillValidForm();
-    const taxIdInput = screen.getByPlaceholderText("Tax ID Number");
-
-    // Invalid format
-    fireEvent.change(taxIdInput, { target: { value: "12345" } });
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    await waitFor(() => {
-      expect(screen.getByText("Tax ID must be in format ##-####### or 9 digits")).toBeInTheDocument();
-    });
-
-    // Valid format ##-#######
-    fireEvent.change(taxIdInput, { target: { value: "12-3456789" } });
-    expect((taxIdInput as HTMLInputElement).value).toBe("12-3456789");
-  });
-
-  // ─── Contract Status Options ──────────────────────────────────────────────────
-
-  it("renders Contract Status dropdown with Active and Inactive options, excluding Intermediate", async () => {
-    const { getOrganizationContractStatuses } = jest.requireMock("../../services/provider-organization");
-    renderWithTheme(<OrganizationCreate />);
-
-    expect(getOrganizationContractStatuses).toHaveBeenCalled();
-    const select = screen.getByRole("combobox");
-    fireEvent.mouseDown(select);
-
-    await waitFor(() => {
-      expect(screen.getByRole("option", { name: "Active" })).toBeInTheDocument();
-      expect(screen.getByRole("option", { name: "Inactive" })).toBeInTheDocument();
-      expect(screen.queryByRole("option", { name: "Intermediate" })).not.toBeInTheDocument();
-    });
-  });
-
-  // ─── Email Format Validation (Replicating Legacy) ────────────────────────────
-
-  it("shows 'Invalid Email Address' error when blurring with invalid email format", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const emailInput = screen.getByPlaceholderText("Email Address");
-
-    fireEvent.change(emailInput, { target: { value: "abc123" } });
-    fireEvent.blur(emailInput);
-
-    expect(screen.getByText("Invalid Email Address")).toBeInTheDocument();
-  });
-
-  it("clears 'Invalid Email Address' error dynamically when valid email is entered", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const emailInput = screen.getByPlaceholderText("Email Address");
-
-    fireEvent.change(emailInput, { target: { value: "abc123" } });
-    fireEvent.blur(emailInput);
-    expect(screen.getByText("Invalid Email Address")).toBeInTheDocument();
-
-    fireEvent.change(emailInput, { target: { value: "abc123@example.com" } });
-    expect(screen.queryByText("Invalid Email Address")).not.toBeInTheDocument();
-  });
-
-  it("shows 'Email address is required' when blurring empty email field", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const emailInput = screen.getByPlaceholderText("Email Address");
-
-    fireEvent.focus(emailInput);
-    fireEvent.blur(emailInput);
-
-    expect(screen.getByText("Email address is required")).toBeInTheDocument();
-  });
-
-  it("Save fails with 'Invalid Email Address' when invalid email format is submitted", async () => {
-    renderWithTheme(<OrganizationCreate />);
-    fillValidForm();
-    const emailInput = screen.getByPlaceholderText("Email Address");
-
-    fireEvent.change(emailInput, { target: { value: "invalid-email" } });
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Invalid Email Address")).toBeInTheDocument();
-      expect(toast.error).toHaveBeenCalled();
-    });
-    expect(addOrganization).not.toHaveBeenCalled();
-  });
-
-  // ─── Legacy Field-Level Validations (Fax, City, County, State) ───────────────
-
-  it("validates Fax number as 6 to 16 digits as per legacy", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const faxInput = screen.getByPlaceholderText("Fax Number");
-
-    // Under 6 digits
-    fireEvent.change(faxInput, { target: { value: "12345" } });
-    fireEvent.blur(faxInput);
-    expect(screen.getByText(/Not a valid Fax number/i)).toBeInTheDocument();
-
-    // 6 digits valid
-    fireEvent.change(faxInput, { target: { value: "123456" } });
-    expect(screen.queryByText(/Not a valid Fax number/i)).not.toBeInTheDocument();
-
-    // 16 digits valid
-    fireEvent.change(faxInput, { target: { value: "1234567890123456" } });
-    expect(screen.queryByText(/Not a valid Fax number/i)).not.toBeInTheDocument();
-  });
-
-  it("validates City cannot be pure digits as per legacy", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const cityInput = screen.getByPlaceholderText("City");
-
-    fireEvent.change(cityInput, { target: { value: "12345" } });
-    fireEvent.blur(cityInput);
-    expect(screen.getByText("Enter only alphabets and numbers of City")).toBeInTheDocument();
-
-    fireEvent.change(cityInput, { target: { value: "New York" } });
-    expect(screen.queryByText("Enter only alphabets and numbers of City")).not.toBeInTheDocument();
-  });
-
-  it("validates County cannot be pure digits as per legacy", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const countyInput = screen.getByPlaceholderText("County");
-
-    fireEvent.change(countyInput, { target: { value: "999" } });
-    fireEvent.blur(countyInput);
-    expect(screen.getByText("Enter only alphabets and numbers of Contry")).toBeInTheDocument();
-
-    fireEvent.change(countyInput, { target: { value: "Orange" } });
-    expect(screen.queryByText("Enter only alphabets and numbers of Contry")).not.toBeInTheDocument();
-  });
-
-  it("validates State cannot be pure digits as per legacy", () => {
-    renderWithTheme(<OrganizationCreate />);
-    const stateInput = screen.getByPlaceholderText("State");
-
-    fireEvent.change(stateInput, { target: { value: "12" } });
-    fireEvent.blur(stateInput);
-    expect(screen.getByText("Enter only alphabets and numbers of State")).toBeInTheDocument();
-
-    fireEvent.change(stateInput, { target: { value: "TX" } });
-    expect(screen.queryByText("Enter only alphabets and numbers of State")).not.toBeInTheDocument();
-  });
-});
-
-
-
+  };
+
+  return (
+    <Box sx={{ backgroundColor: isDarkMode ? P.black : "transparent", minHeight: "100%" }}>
+      <TabsHeader
+        baseTitle="Organization"
+        basePath={BASE_PATH}
+        openTabs={openTabs}
+        onCloseTab={handleOnCloseTab}
+        styles={styles}
+        selectedTabs=""
+        handleTabClick={handleTabClick}
+        handleTabTitleClick={handleTabTitleClick}
+        baseTitleTooltip="Return to Organization list"
+        closeTabTooltipTitle="Close tab"
+      >
+        <Box
+          sx={{
+            ...styles.userTabs,
+            width: "auto",
+            minWidth: 160,
+            gap: "4px",
+            justifyContent: "flex-start",
+            padding: "0 12.5px 0 8px",
+          }}
+        >
+          <AppTooltip title="Reload tab data" placement="bottom" arrow>
+            <IconButton
+              size="small"
+              onClick={handleCreateTabRefresh}
+              sx={{ p: 0.25, width: 18, height: 18, minWidth: 18, minHeight: 18, color: activeTabColor, flexShrink: 0 }}
+            >
+              <Box
+                component="img"
+                src={RefreshIcon}
+                alt="Refresh"
+                sx={{ width: 14, height: 14, ...(isDarkMode ? { filter: "brightness(0) invert(1)" } : {}) }}
+              />
+            </IconButton>
+          </AppTooltip>
+          <Typography component="span" sx={styles.addUserAddText}>
+            New Organization
+          </Typography>
+          <AppTooltip title="Close tab" placement="bottom" arrow>
+            <IconButton
+              size="small"
+              aria-label="Close tab"
+              onClick={handleCreateTabClose}
+              sx={{ p: 0, width: 15, height: 15, minWidth: 15, minHeight: 15, ml: "auto", flexShrink: 0 }}
+            >
+              <Box
+                component="img"
+                src={CaseTabCloseIcon}
+                alt="Close"
+                sx={{ width: 15, height: 15, ...(isDarkMode ? { filter: "brightness(0) invert(1)" } : {}) }}
+              />
+            </IconButton>
+          </AppTooltip>
+        </Box>
+      </TabsHeader>
+
+      <ContentBox showBorder={false} sx={{ p: 0 }}>
+        <Box p={0}>
+          <Box
+            data-dotphrase="false"
+            sx={{
+              backgroundColor: isDarkMode ? P.gridHeaderDark : P.gridHeaderLight,
+              borderRadius: "10px",
+              border: `1px solid ${isDarkMode ? P.strokeDark : P.stroke}`,
+              p: "16px 24px 20px",
+            }}
+          >
+            {/* Header */}
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1.5, mb: 2.5 }}>
+              <Typography sx={{ fontSize: 16, fontWeight: 700, color: isDarkMode ? P.white : P.black }}>
+                {formData.name || "New Organization"}
+              </Typography>
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5 }}>
+                <Button
+                  variant="contained"
+                  onClick={() => navigate(BASE_PATH)}
+                  sx={{
+                    height: 34, borderRadius: "8px", textTransform: "none", fontWeight: 400,
+                    fontSize: 14, px: 2.5,
+                    backgroundColor: isDarkMode ? P.inputBgDark : P.cancelFilledButtonBg,
+                    color: isDarkMode ? P.white : P.neutralButtonTextMedium, boxShadow: "none",
+                    "&:hover": { backgroundColor: isDarkMode ? P.hoverSurfaceDark : P.cancelFilledButtonHover, boxShadow: "none" },
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  disabled={saving}
+                  onClick={() => void handleSave()}
+                  sx={{
+                    height: 34, borderRadius: "8px", textTransform: "none", fontWeight: 400,
+                    fontSize: 14, px: 2.5, backgroundColor: P.primary,
+                    "&:hover": { backgroundColor: P.primaryHover },
+                  }}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+              </Box>
+            </Box>
+
+            {/* 3-column form */}
+            <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" }, gap: "0 32px", alignItems: "start" }}>
+              {/* Col 1 */}
+              <Box>
+                {renderField("Name", "name", "Organization Name", true)}
+                {renderField("Email Address", "emailAddress", "Email Address", true, "email")}
+                {renderField("Phone Number", "phoneNumber", "Phone Number", true, "number", true)}
+                {renderField("Alternate Phone Number", "altPhoneNumber", "Alternate Number", false, "number", true)}
+                {renderField("Fax Number", "faxNumber", "Fax Number", true, "number", true)}
+                {renderField("Tax ID Number", "taxIdNumber", "Tax ID Number", false, "number", true)}
+                {renderField("NPI Number", "npiNumber", "NPI Number", false, "number", true)}
+              </Box>
+
+              {/* Col 2 */}
+              <Box>
+                {renderField("Address 1", "address1", "Address 1", true)}
+                {renderField("Address 2", "address2", "Address 2")}
+                {renderField("City", "city", "City", true)}
+                {renderField("County", "county", "County", true)}
+                {renderField("State", "state", "State", true)}
+                {renderField("Zip", "zip", "Zip Code", true, "number", true)}
+              </Box>
+
+              {/* Col 3 */}
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={formData.isInfinite}
+                      onChange={(e) => handleChange("isInfinite", e.target.checked)}
+                      size="small"
+                    />
+                  }
+                  label={<Typography sx={{ fontSize: 13, color: isDarkMode ? P.white : P.black }}>Is Infinite</Typography>}
+                  sx={{ mb: 1.5, display: "flex" }}
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={formData.isPayable}
+                      onChange={(e) => handleChange("isPayable", e.target.checked)}
+                      size="small"
+                    />
+                  }
+                  label={<Typography sx={{ fontSize: 13, color: isDarkMode ? P.white : P.black }}>Is Payable</Typography>}
+                  sx={{ mb: 1.5, display: "flex" }}
+                />
+                {renderField("CMS Rate Percent", "cmsRatePercent", "CMS Rate", true, "number", true)}
+
+                {/* Contract Status */}
+                <Box sx={fieldWrapSx}>
+                  <Typography sx={{ ...labelSx, display: "flex", alignItems: "center", gap: "3px" }}>
+                    Contract Status <Box component="span" sx={{ color: P.dangerText }}>*</Box>
+                  </Typography>
+                  <Select
+                    displayEmpty
+                    value={formData.contractStatus}
+                    onChange={(e) => handleChange("contractStatus", e.target.value)}
+                    onBlur={() => handleBlur("contractStatus")}
+                    error={Boolean(formErrors.contractStatus)}
+                    sx={{
+                      height: 36, borderRadius: "8px", fontSize: 14,
+                      backgroundColor: isDarkMode ? P.secondaryElevatedDark : P.white,
+                      color: isDarkMode ? P.white : P.black,
+                      "& .MuiOutlinedInput-notchedOutline": { borderColor: isDarkMode ? P.strokeDark : P.stroke },
+                      "& .MuiSelect-select": {
+                        padding: "8px 12px",
+                        fontSize: 14,
+                        color: !formData.contractStatus
+                          ? (isDarkMode ? P.lightMutedText : P.labelMuted)
+                          : (isDarkMode ? P.white : P.black),
+                      },
+                      "& .MuiSvgIcon-root": { color: isDarkMode ? P.white : undefined },
+                    }}
+                    MenuProps={{
+                      disableScrollLock: true,
+                      PaperProps: {
+                        sx: {
+                          backgroundColor: isDarkMode ? P.gridHeaderDark : P.white,
+                          color: isDarkMode ? P.white : P.black,
+                          "& .MuiMenuItem-root:hover": { backgroundColor: isDarkMode ? P.primary : undefined },
+                        },
+                      },
+                    }}
+                    renderValue={(val) => val || "Select"}
+                  >
+                    <MenuItem value="" disabled>
+                      <Typography sx={{ color: isDarkMode ? P.lightMutedText : "text.secondary", fontSize: 14 }}>Select</Typography>
+                    </MenuItem>
+                    {credentialStatuses.map((s) => (
+                      <MenuItem key={s.LookupValueId} value={s.Name} sx={{ fontSize: 14 }}>{s.Name}</MenuItem>
+                    ))}
+                  </Select>
+                  {formErrors.contractStatus && (
+                    <FormHelperText error sx={{ mx: 0, fontSize: 11 }}>
+                      {formErrors.contractStatus}
+                    </FormHelperText>
+                  )}
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+      </ContentBox>
+    </Box>
+  );
+};
+
+export default OrganizationCreate;
