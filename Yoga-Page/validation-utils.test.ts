@@ -128,18 +128,23 @@ describe("validation-utils", () => {
   });
 
   describe("validateTaxIdField", () => {
-    it("validates optional 9-digit Tax ID", () => {
+    it("validates optional 9-digit or ##-####### Tax ID", () => {
       expect(validateTaxIdField("")).toBe("");
       expect(validateTaxIdField("12345")).toBe(VALIDATION_MESSAGES.TAX_ID_INVALID);
+      expect(validateTaxIdField("AB-12345")).toBe(VALIDATION_MESSAGES.TAX_ID_INVALID);
       expect(validateTaxIdField("123456789")).toBe("");
+      expect(validateTaxIdField("12-3456789")).toBe("");
     });
   });
 
   describe("validateZipField", () => {
-    it("validates 5-digit zip code", () => {
+    it("validates 5-digit or 9-digit zip code with hyphen and rejects letters", () => {
       expect(validateZipField("", true)).toBe(VALIDATION_MESSAGES.ZIP_REQUIRED);
       expect(validateZipField("123", true)).toBe(VALIDATION_MESSAGES.ZIP_INVALID);
+      expect(validateZipField("1234a", true)).toBe(VALIDATION_MESSAGES.ZIP_INVALID);
+      expect(validateZipField("abcde", true)).toBe(VALIDATION_MESSAGES.ZIP_INVALID);
       expect(validateZipField("12345", true)).toBe("");
+      expect(validateZipField("12345-6789", true)).toBe("");
     });
   });
 
