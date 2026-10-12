@@ -276,7 +276,7 @@ const OrganizationCreate = () => {
           id={field}
           name={field}
           type={type}
-          inputProps={{ "data-field": field }}
+          inputProps={{ "data-field": field, "data-dotphrase": "false" }}
           value={(formData[field] as string) ?? ""}
           onChange={(e) => handleChange(field, e.target.value)}
           onBlur={() => handleBlur(field)}
@@ -358,6 +358,7 @@ const OrganizationCreate = () => {
       <ContentBox showBorder={false} sx={{ p: 0 }}>
         <Box p={0}>
           <Box
+            data-dotphrase="false"
             sx={{
               backgroundColor: isDarkMode ? P.gridHeaderDark : P.gridHeaderLight,
               borderRadius: "10px",
@@ -403,23 +404,23 @@ const OrganizationCreate = () => {
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" }, gap: "0 32px", alignItems: "start" }}>
               {/* Col 1 */}
               <Box>
-                {renderField("Name", "name", "Type Name", true)}
-                {renderField("Email Address", "emailAddress", "Type Email Address", true)}
-                {renderField("Phone Number", "phoneNumber", "Type Phone Number", true, "number")}
-                {renderField("Alternate Phone Number", "altPhoneNumber", "Type Phone Number", false, "number")}
-                {renderField("Fax Number", "faxNumber", "Type Fax Number", true, "number")}
-                {renderField("Tax ID Number", "taxIdNumber", "Type Tax ID Number", false, "number")}
-                {renderField("NPI Number", "npiNumber", "Type NPI Number", false, "number")}
+                {renderField("Name", "name", "Organization Name", true)}
+                {renderField("Email Address", "emailAddress", "Email Address", true, "email")}
+                {renderField("Phone Number", "phoneNumber", "Phone Number", true, "number")}
+                {renderField("Alternate Phone Number", "altPhoneNumber", "Alternate Number", false, "number")}
+                {renderField("Fax Number", "faxNumber", "Fax Number", true, "number")}
+                {renderField("Tax ID Number", "taxIdNumber", "Tax ID Number", false)}
+                {renderField("NPI Number", "npiNumber", "NPI Number", false, "number")}
               </Box>
 
               {/* Col 2 */}
               <Box>
-                {renderField("Address 1", "address1", "Type Address 1", true)}
-                {renderField("Address 2", "address2", "Type Address 2")}
-                {renderField("City", "city", "Type City", true)}
-                {renderField("County", "county", "Type County", true)}
-                {renderField("State", "state", "Type State", true)}
-                {renderField("Zip", "zip", "Type ZIP", true, "number")}
+                {renderField("Address 1", "address1", "Address 1", true)}
+                {renderField("Address 2", "address2", "Address 2")}
+                {renderField("City", "city", "City", true)}
+                {renderField("County", "county", "County", true)}
+                {renderField("State", "state", "State", true)}
+                {renderField("Zip", "zip", "Zip Code", true)}
               </Box>
 
               {/* Col 3 */}
@@ -446,7 +447,7 @@ const OrganizationCreate = () => {
                   label={<Typography sx={{ fontSize: 13, color: isDarkMode ? P.white : P.black }}>Is Payable</Typography>}
                   sx={{ mb: 1.5, display: "flex" }}
                 />
-                {renderField("CMS Rate Percent", "cmsRatePercent", "Type CMS Rate Percent", true, "number")}
+                {renderField("CMS Rate Percent", "cmsRatePercent", "CMS Rate", true, "number")}
 
                 {/* Contract Status */}
                 <Box sx={fieldWrapSx}>
@@ -483,10 +484,10 @@ const OrganizationCreate = () => {
                         },
                       },
                     }}
-                    renderValue={(val) => val || "Select Credential Status"}
+                    renderValue={(val) => val || "Select"}
                   >
                     <MenuItem value="" disabled>
-                      <Typography sx={{ color: isDarkMode ? P.lightMutedText : "text.secondary", fontSize: 14 }}>Select Credential Status</Typography>
+                      <Typography sx={{ color: isDarkMode ? P.lightMutedText : "text.secondary", fontSize: 14 }}>Select</Typography>
                     </MenuItem>
                     {credentialStatuses.map((s) => (
                       <MenuItem key={s.LookupValueId} value={s.Name} sx={{ fontSize: 14 }}>{s.Name}</MenuItem>
