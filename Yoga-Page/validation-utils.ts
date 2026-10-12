@@ -2,14 +2,15 @@
  * Validation utilities and constants replicating legacy validation rules.
  */
 
+// WHATWG / HTML5 standard email regex, matching legacy jQuery Validate
 export const EMAIL_REGEX =
   /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
 export const PHONE_REGEX = /^\(?([0-9]{3})\)?[-. ]?([0-9]{3})[-. ]?([0-9]{4})$/;
 export const FAX_REGEX = /^\+?[0-9]{6,16}$/;
 export const NPI_REGEX = /^\d{10}$/;
-export const TAX_ID_REGEX = /^(?:\d{9}|\d{2}-\d{7})$/;
-export const ZIP_REGEX = /^\d{5}(?:-\d{4})?$/;
+export const TAX_ID_REGEX = /^\d+$/;
+export const ZIP_REGEX = /^\d{5}$/;
 
 export const VALIDATION_MESSAGES = {
   EMAIL_REQUIRED: "Email address is required",
@@ -21,7 +22,7 @@ export const VALIDATION_MESSAGES = {
   FAX_REQUIRED: "Fax number is required",
   FAX_INVALID: "Not a valid Fax number.Minimum  6 Number and Maximum 16",
   NPI_INVALID: "NPI number must be exactly 10 digits",
-  TAX_ID_INVALID: "Tax ID must be in format ##-####### or 9 digits",
+  TAX_ID_INVALID: "Enter only numbers of Tax ID Number",
   ADDRESS1_REQUIRED: "Address 1 is required",
   CITY_REQUIRED: "City is required",
   CITY_INVALID: "Enter only alphabets and numbers of City",
@@ -139,7 +140,7 @@ export const validateNpiField = (npi: string): string => {
 };
 
 /**
- * Validates Tax ID (optional or 9 digits).
+ * Validates Tax ID (optional or digits only).
  */
 export const validateTaxIdField = (taxId: string): string => {
   const trimmed = (taxId ?? "").trim();
