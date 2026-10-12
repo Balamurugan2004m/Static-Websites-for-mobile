@@ -1,0 +1,16 @@
+export const ORG_FIELD_MAX_LENGTHS: Record<string, number> = {
+  name: 45,
+  emailAddress: 45,
+  phoneNumber: 10,
+  altPhoneNumber: 10,
+  faxNumber: 16,
+  taxIdNumber: 45,
+  npiNumber: 45,
+  address1: 145,
+  address2: 45,
+  city: 45,
+  county: 45,
+  state: 45,
+  zip: 5,
+  cmsRatePercent: 3,
+};
