@@ -4,6 +4,7 @@ import { Box, OutlinedInput, OutlinedInputProps } from "@mui/material";
 export interface CharacterCountInputProps extends OutlinedInputProps {
   maxLength?: number;
   numericOnly?: boolean;
+  allowHyphen?: boolean;
   helperText?: React.ReactNode;
 }
 
@@ -12,6 +13,7 @@ export const CharacterCountInput = forwardRef<HTMLDivElement, CharacterCountInpu
     {
       maxLength,
       numericOnly = false,
+      allowHyphen = false,
       helperText,
       type,
       value,
@@ -33,12 +35,56 @@ export const CharacterCountInput = forwardRef<HTMLDivElement, CharacterCountInpu
 
     const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setIsFocused(false);
+      if (allowHyphen) {
+        const currentVal = typeof value === "string" ? value : (e.target.value ?? "");
+        if (currentVal.endsWith("-")) {
+          const trimmedVal = currentVal.slice(0, -1);
+          try {
+            Object.defineProperty(e, "target", {
+              writable: true,
+              value: { ...e.target, value: trimmedVal },
+            });
+          } catch {
+            e.target.value = trimmedVal;
+          }
+          onChange?.(e);
+        }
+      }
       onBlur?.(e);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      if (type === "number" || numericOnly) {
+      const allowedControlKeys = [
+        "Backspace",
+        "Delete",
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Tab",
+        "Enter",
+        "Home",
+        "End",
+        "Escape",
+      ];
+      const isControlKey = allowedControlKeys.includes(e.key) || e.ctrlKey || e.metaKey;
+
+      if (allowHyphen) {
+        if (!isControlKey) {
+          if (e.key === "-") {
+            const currentVal = String((e.target as HTMLInputElement).value || "");
+            const digitsOnly = currentVal.replace(/\D/g, "");
+            if (currentVal.includes("-") || digitsOnly.length !== 5) {
+              e.preventDefault();
+            }
+          } else if (!/^[0-9]$/.test(e.key)) {
+            e.preventDefault();
+          }
+        }
+      } else if (type === "number" || numericOnly) {
         if (["e", "E", "+", "-", "."].includes(e.key)) {
+          e.preventDefault();
+        } else if (!isControlKey && !/^[0-9]$/.test(e.key)) {
           e.preventDefault();
         }
       }
@@ -47,7 +93,16 @@ export const CharacterCountInput = forwardRef<HTMLDivElement, CharacterCountInpu
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       let val = e.target.value;
-      if (type === "number" || numericOnly) {
+      if (allowHyphen) {
+        const rawDigits = val.replace(/\D/g, "").slice(0, 9);
+        if (rawDigits.length > 5) {
+          val = `${rawDigits.slice(0, 5)}-${rawDigits.slice(5)}`;
+        } else if (val.includes("-") && rawDigits.length === 5) {
+          val = `${rawDigits}-`;
+        } else {
+          val = rawDigits;
+        }
+      } else if (type === "number" || numericOnly) {
         val = val.replace(/\D/g, "");
       }
       if (maxLength !== undefined && val.length > maxLength) {
@@ -72,7 +127,7 @@ export const CharacterCountInput = forwardRef<HTMLDivElement, CharacterCountInpu
       <Box sx={{ position: "relative", width: "100%" }}>
         <OutlinedInput
           ref={ref}
-          type={type}
+          type={allowHyphen ? "text" : type}
           value={value ?? ""}
           onChange={handleChange}
           onFocus={handleFocus}
@@ -86,15 +141,19 @@ export const CharacterCountInput = forwardRef<HTMLDivElement, CharacterCountInpu
             ...(type === "number" || numericOnly
               ? {
                   "& .MuiOutlinedInput-input[type=number]": {
-                    paddingRight: "2px",
+                    paddingRight: "4px",
                     height: "100%",
                     boxSizing: "border-box",
                   },
-                  "& input[type=number]::-webkit-inner-spin-button": {
-                    height: "20px",
-                    margin: "auto 4px auto 0",
+                  "& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button": {
+                    height: "24px",
                     opacity: 1,
+                    display: "block",
                     cursor: "pointer",
+                    margin: "auto 4px auto 0",
+                  },
+                  "& input[type=number]": {
+                    MozAppearance: "number-input",
                   },
                 }
               : {}),
