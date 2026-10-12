@@ -529,7 +529,8 @@ const OrganizationDetails = () => {
     label: string,
     field: keyof FormData,
     placeholder?: string,
-    required = false
+    required = false,
+    type?: string
   ) => {
     const error = formErrors[field];
     const maxLength = ORG_FIELD_MAX_LENGTHS[field];
@@ -540,11 +541,16 @@ const OrganizationDetails = () => {
           {required && <Box component="span" sx={{ color: P.dangerText }}>*</Box>}
         </Typography>
         <OutlinedInput
+          type={type}
           value={(formData[field] as string) ?? ""}
           onChange={(e) => handleChange(field, e.target.value)}
           onBlur={() => handleBlur(field)}
           placeholder={placeholder ?? `Type ${label}`}
-          inputProps={maxLength ? { maxLength } : undefined}
+          inputProps={{
+            ...(maxLength ? { maxLength } : {}),
+            "data-field": field,
+            "data-dotphrase": "false",
+          }}
           error={Boolean(error)}
           sx={{
             ...inputSx,
@@ -731,6 +737,7 @@ const OrganizationDetails = () => {
 
           {/* ── Org Card ── */}
           <Box
+            data-dotphrase="false"
             sx={{
               backgroundColor: isDarkMode ? P.gridHeaderDark : P.gridHeaderLight,
               borderRadius: "10px",
@@ -790,23 +797,23 @@ const OrganizationDetails = () => {
             <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr 1fr" }, gap: "0 32px", alignItems: "start" }}>
               {/* Col 1 */}
               <Box>
-                {isEditing ? renderEditField("Name", "name", "Type Name", true) : renderViewField("Name", org.name, true)}
-                {isEditing ? renderEditField("Email Address", "emailAddress", "Type Email Address", true) : renderViewField("Email Address", org.emailAddress, true)}
-                {isEditing ? renderEditField("Phone Number", "phoneNumber", "Type Phone Number", true) : renderViewField("Phone Number", org.phoneNumber, true)}
-                {isEditing ? renderEditField("Alternate Phone Number", "altPhoneNumber", "Type Phone Number") : renderViewField("Alternate Phone Number", org.altPhoneNumber)}
-                {isEditing ? renderEditField("Fax Number", "faxNumber", "Type Fax Number", true) : renderViewField("Fax Number", org.faxNumber, true)}
-                {isEditing ? renderEditField("Tax ID Number", "taxIdNumber", "Type Tax ID Number") : renderViewField("Tax ID Number", org.taxIdNumber)}
-                {isEditing ? renderEditField("NPI Number", "npiNumber", "Type NPI Number") : renderViewField("NPI Number", org.npiNumber)}
+                {isEditing ? renderEditField("Name", "name", "Organization Name", true) : renderViewField("Name", org.name, true)}
+                {isEditing ? renderEditField("Email Address", "emailAddress", "Email Address", true, "email") : renderViewField("Email Address", org.emailAddress, true)}
+                {isEditing ? renderEditField("Phone Number", "phoneNumber", "Phone Number", true) : renderViewField("Phone Number", org.phoneNumber, true)}
+                {isEditing ? renderEditField("Alternate Phone Number", "altPhoneNumber", "Alternate Number") : renderViewField("Alternate Phone Number", org.altPhoneNumber)}
+                {isEditing ? renderEditField("Fax Number", "faxNumber", "Fax Number", true) : renderViewField("Fax Number", org.faxNumber, true)}
+                {isEditing ? renderEditField("Tax ID Number", "taxIdNumber", "Tax ID Number") : renderViewField("Tax ID Number", org.taxIdNumber)}
+                {isEditing ? renderEditField("NPI Number", "npiNumber", "NPI Number") : renderViewField("NPI Number", org.npiNumber)}
               </Box>
 
               {/* Col 2 */}
               <Box>
-                {isEditing ? renderEditField("Address 1", "address1", "Type Address 1", true) : renderViewField("Address 1", org.address1, true)}
-                {isEditing ? renderEditField("Address 2", "address2", "Type Address 2") : renderViewField("Address 2", org.address2)}
-                {isEditing ? renderEditField("City", "city", "Type City", true) : renderViewField("City", org.city, true)}
-                {isEditing ? renderEditField("County", "county", "Type County", true) : renderViewField("County", org.county, true)}
-                {isEditing ? renderEditField("State", "state", "Type State", true) : renderViewField("State", org.state, true)}
-                {isEditing ? renderEditField("Zip", "zip", "Type ZIP", true) : renderViewField("Zip", org.zip, true)}
+                {isEditing ? renderEditField("Address 1", "address1", "Address 1", true) : renderViewField("Address 1", org.address1, true)}
+                {isEditing ? renderEditField("Address 2", "address2", "Address 2") : renderViewField("Address 2", org.address2)}
+                {isEditing ? renderEditField("City", "city", "City", true) : renderViewField("City", org.city, true)}
+                {isEditing ? renderEditField("County", "county", "County", true) : renderViewField("County", org.county, true)}
+                {isEditing ? renderEditField("State", "state", "State", true) : renderViewField("State", org.state, true)}
+                {isEditing ? renderEditField("Zip", "zip", "Zip Code", true) : renderViewField("Zip", org.zip, true)}
               </Box>
 
               {/* Col 3 */}
@@ -836,7 +843,7 @@ const OrganizationDetails = () => {
                   sx={{ mb: 1.5 }}
                 />
                 {isEditing ? (
-                  renderEditField("CMS Rate Percent", "cmsRatePercent", "Type CMS Rate Percent", true)
+                  renderEditField("CMS Rate Percent", "cmsRatePercent", "CMS Rate", true)
                 ) : (
                   renderViewField("CMS Rate Percent", org.cmsRatePercent, true)
                 )}
@@ -879,10 +886,10 @@ const OrganizationDetails = () => {
                           },
                         },
                       }}
-                      renderValue={(val) => val || "Select Credential Status"}
+                      renderValue={(val) => val || "Select"}
                     >
                       <MenuItem value="" disabled>
-                        <Typography sx={{ color: isDarkMode ? P.lightMutedText : "text.secondary", fontSize: 14 }}>Select Credential Status</Typography>
+                        <Typography sx={{ color: isDarkMode ? P.lightMutedText : "text.secondary", fontSize: 14 }}>Select</Typography>
                       </MenuItem>
                       {credentialStatuses.map((s) => (
                         <MenuItem key={s.LookupValueId} value={s.Name} sx={{ fontSize: 14 }}>{s.Name}</MenuItem>
