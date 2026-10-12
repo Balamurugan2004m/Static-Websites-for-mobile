@@ -665,7 +665,7 @@ describe("OrganizationDetails", () => {
     renderWithTheme(<OrganizationDetails />);
     await waitFor(() => screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
-    const nameInput = screen.getByPlaceholderText("Type Name");
+    const nameInput = screen.getByPlaceholderText("Organization Name");
     fireEvent.change(nameInput, { target: { value: "Updated Name" } });
     expect(nameInput).toHaveValue("Updated Name");
   });
@@ -730,7 +730,7 @@ describe("OrganizationDetails", () => {
     await waitFor(() => screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
 
-    const emailInput = screen.getByPlaceholderText("Type Email Address");
+    const emailInput = screen.getByPlaceholderText("Email Address");
     fireEvent.change(emailInput, { target: { value: "invalid-email" } });
     fireEvent.blur(emailInput);
 
@@ -742,7 +742,7 @@ describe("OrganizationDetails", () => {
     await waitFor(() => screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
 
-    const faxInput = screen.getByPlaceholderText("Type Fax Number");
+    const faxInput = screen.getByPlaceholderText("Fax Number");
     fireEvent.change(faxInput, { target: { value: "123" } });
     fireEvent.blur(faxInput);
 
@@ -754,7 +754,7 @@ describe("OrganizationDetails", () => {
     await waitFor(() => screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
 
-    const cityInput = screen.getByPlaceholderText("Type City");
+    const cityInput = screen.getByPlaceholderText("City");
     fireEvent.change(cityInput, { target: { value: "12345" } });
     fireEvent.blur(cityInput);
 
@@ -766,7 +766,7 @@ describe("OrganizationDetails", () => {
     await waitFor(() => screen.getByRole("button", { name: /^edit$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
 
-    const emailInput = screen.getByPlaceholderText("Type Email Address");
+    const emailInput = screen.getByPlaceholderText("Email Address");
     fireEvent.change(emailInput, { target: { value: "not-an-email" } });
 
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
