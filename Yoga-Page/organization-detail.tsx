@@ -13,7 +13,6 @@ import {
   FormControlLabel,
   FormHelperText,
   MenuItem,
-  OutlinedInput,
   Select,
   Skeleton,
   Stack,
@@ -21,6 +20,7 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
+import { CharacterCountInput } from "../../ui/character-count-input";
 import {
   validateOrganizationField,
   validateOrganizationForm,
@@ -506,6 +506,21 @@ const OrganizationDetails = () => {
         color: isDarkMode ? P.white : P.black,
         "&::placeholder": { color: isDarkMode ? P.lightMutedText : P.labelMuted, opacity: 1 },
       },
+      "& .MuiOutlinedInput-input[type=number]": {
+        paddingRight: "4px",
+        height: "100%",
+        boxSizing: "border-box",
+      },
+      "& input[type=number]::-webkit-inner-spin-button, & input[type=number]::-webkit-outer-spin-button": {
+        height: "24px",
+        opacity: 1,
+        display: "block",
+        cursor: "pointer",
+        margin: "auto 4px auto 0",
+      },
+      "& input[type=number]": {
+        MozAppearance: "number-input",
+      },
       "& .MuiOutlinedInput-notchedOutline": { borderColor: isDarkMode ? P.strokeDark : P.stroke },
     }),
     [isDarkMode]
@@ -530,7 +545,9 @@ const OrganizationDetails = () => {
     field: keyof FormData,
     placeholder?: string,
     required = false,
-    type?: string
+    type?: string,
+    numericOnly = false,
+    allowHyphen = false
   ) => {
     const error = formErrors[field];
     const maxLength = ORG_FIELD_MAX_LENGTHS[field];
@@ -540,14 +557,18 @@ const OrganizationDetails = () => {
           {label}
           {required && <Box component="span" sx={{ color: P.dangerText }}>*</Box>}
         </Typography>
-        <OutlinedInput
+        <CharacterCountInput
+          id={field}
+          name={field}
           type={type}
+          numericOnly={numericOnly}
+          allowHyphen={allowHyphen}
           value={(formData[field] as string) ?? ""}
           onChange={(e) => handleChange(field, e.target.value)}
           onBlur={() => handleBlur(field)}
           placeholder={placeholder ?? `Type ${label}`}
+          maxLength={maxLength}
           inputProps={{
-            ...(maxLength ? { maxLength } : {}),
             "data-field": field,
             "data-dotphrase": "false",
           }}
@@ -556,12 +577,14 @@ const OrganizationDetails = () => {
             ...inputSx,
             ...(error ? { "& .MuiOutlinedInput-notchedOutline": { borderColor: theme.palette.error.main } } : {}),
           }}
+          helperText={
+            error ? (
+              <FormHelperText error sx={{ mx: 0, fontSize: 11, mt: 0 }}>
+                {error}
+              </FormHelperText>
+            ) : undefined
+          }
         />
-        {error && (
-          <FormHelperText error sx={{ mx: 0, fontSize: 11 }}>
-            {error}
-          </FormHelperText>
-        )}
       </Box>
     );
   };
@@ -799,11 +822,11 @@ const OrganizationDetails = () => {
               <Box>
                 {isEditing ? renderEditField("Name", "name", "Organization Name", true) : renderViewField("Name", org.name, true)}
                 {isEditing ? renderEditField("Email Address", "emailAddress", "Email Address", true, "email") : renderViewField("Email Address", org.emailAddress, true)}
-                {isEditing ? renderEditField("Phone Number", "phoneNumber", "Phone Number", true) : renderViewField("Phone Number", org.phoneNumber, true)}
-                {isEditing ? renderEditField("Alternate Phone Number", "altPhoneNumber", "Alternate Number") : renderViewField("Alternate Phone Number", org.altPhoneNumber)}
-                {isEditing ? renderEditField("Fax Number", "faxNumber", "Fax Number", true) : renderViewField("Fax Number", org.faxNumber, true)}
-                {isEditing ? renderEditField("Tax ID Number", "taxIdNumber", "Tax ID Number") : renderViewField("Tax ID Number", org.taxIdNumber)}
-                {isEditing ? renderEditField("NPI Number", "npiNumber", "NPI Number") : renderViewField("NPI Number", org.npiNumber)}
+                {isEditing ? renderEditField("Phone Number", "phoneNumber", "Phone Number", true, "number", true) : renderViewField("Phone Number", org.phoneNumber, true)}
+                {isEditing ? renderEditField("Alternate Phone Number", "altPhoneNumber", "Alternate Number", false, "number", true) : renderViewField("Alternate Phone Number", org.altPhoneNumber)}
+                {isEditing ? renderEditField("Fax Number", "faxNumber", "Fax Number", true, "number", true) : renderViewField("Fax Number", org.faxNumber, true)}
+                {isEditing ? renderEditField("Tax ID Number", "taxIdNumber", "Tax ID Number", false, "number", true) : renderViewField("Tax ID Number", org.taxIdNumber)}
+                {isEditing ? renderEditField("NPI Number", "npiNumber", "NPI Number", false, "number", true) : renderViewField("NPI Number", org.npiNumber)}
               </Box>
 
               {/* Col 2 */}
@@ -813,7 +836,7 @@ const OrganizationDetails = () => {
                 {isEditing ? renderEditField("City", "city", "City", true) : renderViewField("City", org.city, true)}
                 {isEditing ? renderEditField("County", "county", "County", true) : renderViewField("County", org.county, true)}
                 {isEditing ? renderEditField("State", "state", "State", true) : renderViewField("State", org.state, true)}
-                {isEditing ? renderEditField("Zip", "zip", "Zip Code", true) : renderViewField("Zip", org.zip, true)}
+                {isEditing ? renderEditField("Zip", "zip", "Zip Code", true, "number", true) : renderViewField("Zip", org.zip, true)}
               </Box>
 
               {/* Col 3 */}
@@ -843,7 +866,7 @@ const OrganizationDetails = () => {
                   sx={{ mb: 1.5 }}
                 />
                 {isEditing ? (
-                  renderEditField("CMS Rate Percent", "cmsRatePercent", "CMS Rate", true)
+                  renderEditField("CMS Rate Percent", "cmsRatePercent", "CMS Rate", true, "number", true)
                 ) : (
                   renderViewField("CMS Rate Percent", org.cmsRatePercent, true)
                 )}
