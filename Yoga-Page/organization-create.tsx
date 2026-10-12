@@ -262,7 +262,9 @@ const OrganizationCreate = () => {
     field: keyof FormData,
     placeholder?: string,
     required = false,
-    type?: string
+    type?: string,
+    numericOnly = false,
+    allowHyphen = false
   ) => {
     const error = formErrors[field];
     const maxLength = ORG_FIELD_MAX_LENGTHS[field];
@@ -276,6 +278,8 @@ const OrganizationCreate = () => {
           id={field}
           name={field}
           type={type}
+          numericOnly={numericOnly}
+          allowHyphen={allowHyphen}
           inputProps={{ "data-field": field, "data-dotphrase": "false" }}
           value={(formData[field] as string) ?? ""}
           onChange={(e) => handleChange(field, e.target.value)}
@@ -406,11 +410,11 @@ const OrganizationCreate = () => {
               <Box>
                 {renderField("Name", "name", "Organization Name", true)}
                 {renderField("Email Address", "emailAddress", "Email Address", true, "email")}
-                {renderField("Phone Number", "phoneNumber", "Phone Number", true, "number")}
-                {renderField("Alternate Phone Number", "altPhoneNumber", "Alternate Number", false, "number")}
-                {renderField("Fax Number", "faxNumber", "Fax Number", true, "number")}
-                {renderField("Tax ID Number", "taxIdNumber", "Tax ID Number", false)}
-                {renderField("NPI Number", "npiNumber", "NPI Number", false, "number")}
+                {renderField("Phone Number", "phoneNumber", "Phone Number", true, "number", true)}
+                {renderField("Alternate Phone Number", "altPhoneNumber", "Alternate Number", false, "number", true)}
+                {renderField("Fax Number", "faxNumber", "Fax Number", true, "number", true)}
+                {renderField("Tax ID Number", "taxIdNumber", "Tax ID Number", false, "number", true)}
+                {renderField("NPI Number", "npiNumber", "NPI Number", false, "number", true)}
               </Box>
 
               {/* Col 2 */}
@@ -420,7 +424,7 @@ const OrganizationCreate = () => {
                 {renderField("City", "city", "City", true)}
                 {renderField("County", "county", "County", true)}
                 {renderField("State", "state", "State", true)}
-                {renderField("Zip", "zip", "Zip Code", true)}
+                {renderField("Zip", "zip", "Zip Code", true, "number", true)}
               </Box>
 
               {/* Col 3 */}
@@ -447,7 +451,7 @@ const OrganizationCreate = () => {
                   label={<Typography sx={{ fontSize: 13, color: isDarkMode ? P.white : P.black }}>Is Payable</Typography>}
                   sx={{ mb: 1.5, display: "flex" }}
                 />
-                {renderField("CMS Rate Percent", "cmsRatePercent", "CMS Rate", true, "number")}
+                {renderField("CMS Rate Percent", "cmsRatePercent", "CMS Rate", true, "number", true)}
 
                 {/* Contract Status */}
                 <Box sx={fieldWrapSx}>
