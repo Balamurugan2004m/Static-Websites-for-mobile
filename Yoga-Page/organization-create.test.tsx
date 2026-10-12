@@ -133,16 +133,16 @@ describe("OrganizationCreate", () => {
   });
 
   const fillValidForm = () => {
-    fireEvent.change(screen.getByPlaceholderText("Type Name"), { target: { value: "New Corp" } });
-    fireEvent.change(screen.getByPlaceholderText("Type Email Address"), { target: { value: "new@corp.com" } });
-    fireEvent.change(screen.getAllByPlaceholderText("Type Phone Number")[0], { target: { value: "1234567890" } });
-    fireEvent.change(screen.getByPlaceholderText("Type Fax Number"), { target: { value: "1234567890" } });
-    fireEvent.change(screen.getByPlaceholderText("Type Address 1"), { target: { value: "123 Main St" } });
-    fireEvent.change(screen.getByPlaceholderText("Type City"), { target: { value: "City" } });
-    fireEvent.change(screen.getByPlaceholderText("Type County"), { target: { value: "County" } });
-    fireEvent.change(screen.getByPlaceholderText("Type State"), { target: { value: "TX" } });
-    fireEvent.change(screen.getByPlaceholderText("Type ZIP"), { target: { value: "12345" } });
-    fireEvent.change(screen.getByPlaceholderText("Type CMS Rate Percent"), { target: { value: "80" } });
+    fireEvent.change(screen.getByPlaceholderText("Organization Name"), { target: { value: "New Corp" } });
+    fireEvent.change(screen.getByPlaceholderText("Email Address"), { target: { value: "new@corp.com" } });
+    fireEvent.change(screen.getByPlaceholderText("Phone Number"), { target: { value: "1234567890" } });
+    fireEvent.change(screen.getByPlaceholderText("Fax Number"), { target: { value: "1234567890" } });
+    fireEvent.change(screen.getByPlaceholderText("Address 1"), { target: { value: "123 Main St" } });
+    fireEvent.change(screen.getByPlaceholderText("City"), { target: { value: "City" } });
+    fireEvent.change(screen.getByPlaceholderText("County"), { target: { value: "County" } });
+    fireEvent.change(screen.getByPlaceholderText("State"), { target: { value: "TX" } });
+    fireEvent.change(screen.getByPlaceholderText("Zip Code"), { target: { value: "12345" } });
+    fireEvent.change(screen.getByPlaceholderText("CMS Rate"), { target: { value: "80" } });
   };
 
   // ─── Initial render ────────────────────────────────────────────────────────
@@ -171,17 +171,17 @@ describe("OrganizationCreate", () => {
 
   it("renders Name input field", () => {
     renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByPlaceholderText("Type Name")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Organization Name")).toBeInTheDocument();
   });
 
   it("renders Email Address input", () => {
     renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByPlaceholderText("Type Email Address")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Email Address")).toBeInTheDocument();
   });
 
   it("renders City input", () => {
     renderWithTheme(<OrganizationCreate />);
-    expect(screen.getByPlaceholderText("Type City")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("City")).toBeInTheDocument();
   });
 
   // ─── Cancel ────────────────────────────────────────────────────────────────
@@ -310,7 +310,7 @@ describe("OrganizationCreate", () => {
     // There should be multiple asterisk spans rendered.
    // const asterisks = document.querySelectorAll("span[style]");
     // Simply verify at least one required field is present by checking the Name placeholder
-    expect(screen.getByPlaceholderText("Type Name")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Organization Name")).toBeInTheDocument();
     // The Name label should appear alongside its asterisk — both rendered via renderField
     expect(screen.getByText("Name")).toBeInTheDocument();
   });
@@ -325,7 +325,7 @@ describe("OrganizationCreate", () => {
 
   it("header title updates to reflect typed org name", () => {
     renderWithTheme(<OrganizationCreate />);
-    fireEvent.change(screen.getByPlaceholderText("Type Name"), {
+    fireEvent.change(screen.getByPlaceholderText("Organization Name"), {
       target: { value: "Acme Labs" },
     });
     expect(screen.getByText("Acme Labs")).toBeInTheDocument();
@@ -335,7 +335,7 @@ describe("OrganizationCreate", () => {
 
   it("shows character counter badge on input focus and hides on blur", () => {
     renderWithTheme(<OrganizationCreate />);
-    const nameInput = screen.getByPlaceholderText("Type Name");
+    const nameInput = screen.getByPlaceholderText("Organization Name");
 
     expect(screen.queryByTestId("char-counter-badge")).not.toBeInTheDocument();
 
@@ -351,7 +351,7 @@ describe("OrganizationCreate", () => {
 
   it("turns character counter badge red when limit is reached", () => {
     renderWithTheme(<OrganizationCreate />);
-    const nameInput = screen.getByPlaceholderText("Type Name");
+    const nameInput = screen.getByPlaceholderText("Organization Name");
 
     fireEvent.focus(nameInput);
     fireEvent.change(nameInput, { target: { value: "A".repeat(45) } });
@@ -363,7 +363,7 @@ describe("OrganizationCreate", () => {
 
   it("restricts excessive input beyond maxLength", () => {
     renderWithTheme(<OrganizationCreate />);
-    const nameInput = screen.getByPlaceholderText("Type Name");
+    const nameInput = screen.getByPlaceholderText("Organization Name");
 
     fireEvent.change(nameInput, { target: { value: "A".repeat(100) } });
     expect((nameInput as HTMLInputElement).value.length).toBe(45);
@@ -371,50 +371,50 @@ describe("OrganizationCreate", () => {
 
   // ─── Numeric Fields & type="number" ──────────────────────────────────────────
 
-  it("configures the 7 numeric fields with type='number'", () => {
+  it("configures numeric and text fields appropriately", () => {
     renderWithTheme(<OrganizationCreate />);
 
-    const phoneInputs = screen.getAllByPlaceholderText("Type Phone Number");
-    const phoneInput = phoneInputs[0];
-    const altPhoneInput = phoneInputs[1];
-    const faxInput = screen.getByPlaceholderText("Type Fax Number");
-    const taxIdInput = screen.getByPlaceholderText("Type Tax ID Number");
-    const npiInput = screen.getByPlaceholderText("Type NPI Number");
-    const zipInput = screen.getByPlaceholderText("Type ZIP");
-    const cmsRateInput = screen.getByPlaceholderText("Type CMS Rate Percent");
+    const phoneInput = screen.getByPlaceholderText("Phone Number");
+    const altPhoneInput = screen.getByPlaceholderText("Alternate Number");
+    const faxInput = screen.getByPlaceholderText("Fax Number");
+    const taxIdInput = screen.getByPlaceholderText("Tax ID Number");
+    const npiInput = screen.getByPlaceholderText("NPI Number");
+    const zipInput = screen.getByPlaceholderText("Zip Code");
+    const cmsRateInput = screen.getByPlaceholderText("CMS Rate");
 
     expect(phoneInput).toHaveAttribute("type", "number");
     expect(altPhoneInput).toHaveAttribute("type", "number");
     expect(faxInput).toHaveAttribute("type", "number");
-    expect(taxIdInput).toHaveAttribute("type", "number");
     expect(npiInput).toHaveAttribute("type", "number");
-    expect(zipInput).toHaveAttribute("type", "number");
     expect(cmsRateInput).toHaveAttribute("type", "number");
+    // Tax ID and Zip should allow text with hyphens
+    expect(taxIdInput).not.toHaveAttribute("type", "number");
+    expect(zipInput).not.toHaveAttribute("type", "number");
   });
 
   it("restricts excessive numeric input beyond maxLength on Zip", () => {
     renderWithTheme(<OrganizationCreate />);
-    const zipInput = screen.getByPlaceholderText("Type ZIP") as HTMLInputElement;
+    const zipInput = screen.getByPlaceholderText("Zip Code") as HTMLInputElement;
 
-    fireEvent.change(zipInput, { target: { value: "123456789" } });
-    expect(zipInput.value).toBe("12345");
+    fireEvent.change(zipInput, { target: { value: "12345-6789000" } });
+    expect(zipInput.value).toBe("12345-6789");
   });
 
-  it("validates Tax ID as 9 digits when entered", async () => {
+  it("validates Tax ID format when entered", async () => {
     renderWithTheme(<OrganizationCreate />);
     fillValidForm();
-    const taxIdInput = screen.getByPlaceholderText("Type Tax ID Number");
+    const taxIdInput = screen.getByPlaceholderText("Tax ID Number");
 
-    // Invalid length (less than 9 digits)
+    // Invalid format
     fireEvent.change(taxIdInput, { target: { value: "12345" } });
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
     await waitFor(() => {
-      expect(screen.getByText("Tax ID must be 9 digits")).toBeInTheDocument();
+      expect(screen.getByText("Tax ID must be in format ##-####### or 9 digits")).toBeInTheDocument();
     });
 
-    // Valid 9 digits
-    fireEvent.change(taxIdInput, { target: { value: "123456789" } });
-    expect((taxIdInput as HTMLInputElement).value).toBe("123456789");
+    // Valid format ##-#######
+    fireEvent.change(taxIdInput, { target: { value: "12-3456789" } });
+    expect((taxIdInput as HTMLInputElement).value).toBe("12-3456789");
   });
 
   // ─── Contract Status Options ──────────────────────────────────────────────────
@@ -438,7 +438,7 @@ describe("OrganizationCreate", () => {
 
   it("shows 'Invalid Email Address' error when blurring with invalid email format", () => {
     renderWithTheme(<OrganizationCreate />);
-    const emailInput = screen.getByPlaceholderText("Type Email Address");
+    const emailInput = screen.getByPlaceholderText("Email Address");
 
     fireEvent.change(emailInput, { target: { value: "abc123" } });
     fireEvent.blur(emailInput);
@@ -448,7 +448,7 @@ describe("OrganizationCreate", () => {
 
   it("clears 'Invalid Email Address' error dynamically when valid email is entered", () => {
     renderWithTheme(<OrganizationCreate />);
-    const emailInput = screen.getByPlaceholderText("Type Email Address");
+    const emailInput = screen.getByPlaceholderText("Email Address");
 
     fireEvent.change(emailInput, { target: { value: "abc123" } });
     fireEvent.blur(emailInput);
@@ -460,7 +460,7 @@ describe("OrganizationCreate", () => {
 
   it("shows 'Email address is required' when blurring empty email field", () => {
     renderWithTheme(<OrganizationCreate />);
-    const emailInput = screen.getByPlaceholderText("Type Email Address");
+    const emailInput = screen.getByPlaceholderText("Email Address");
 
     fireEvent.focus(emailInput);
     fireEvent.blur(emailInput);
@@ -471,7 +471,7 @@ describe("OrganizationCreate", () => {
   it("Save fails with 'Invalid Email Address' when invalid email format is submitted", async () => {
     renderWithTheme(<OrganizationCreate />);
     fillValidForm();
-    const emailInput = screen.getByPlaceholderText("Type Email Address");
+    const emailInput = screen.getByPlaceholderText("Email Address");
 
     fireEvent.change(emailInput, { target: { value: "invalid-email" } });
     fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
@@ -487,7 +487,7 @@ describe("OrganizationCreate", () => {
 
   it("validates Fax number as 6 to 16 digits as per legacy", () => {
     renderWithTheme(<OrganizationCreate />);
-    const faxInput = screen.getByPlaceholderText("Type Fax Number");
+    const faxInput = screen.getByPlaceholderText("Fax Number");
 
     // Under 6 digits
     fireEvent.change(faxInput, { target: { value: "12345" } });
@@ -505,7 +505,7 @@ describe("OrganizationCreate", () => {
 
   it("validates City cannot be pure digits as per legacy", () => {
     renderWithTheme(<OrganizationCreate />);
-    const cityInput = screen.getByPlaceholderText("Type City");
+    const cityInput = screen.getByPlaceholderText("City");
 
     fireEvent.change(cityInput, { target: { value: "12345" } });
     fireEvent.blur(cityInput);
@@ -517,7 +517,7 @@ describe("OrganizationCreate", () => {
 
   it("validates County cannot be pure digits as per legacy", () => {
     renderWithTheme(<OrganizationCreate />);
-    const countyInput = screen.getByPlaceholderText("Type County");
+    const countyInput = screen.getByPlaceholderText("County");
 
     fireEvent.change(countyInput, { target: { value: "999" } });
     fireEvent.blur(countyInput);
@@ -529,7 +529,7 @@ describe("OrganizationCreate", () => {
 
   it("validates State cannot be pure digits as per legacy", () => {
     renderWithTheme(<OrganizationCreate />);
-    const stateInput = screen.getByPlaceholderText("Type State");
+    const stateInput = screen.getByPlaceholderText("State");
 
     fireEvent.change(stateInput, { target: { value: "12" } });
     fireEvent.blur(stateInput);
