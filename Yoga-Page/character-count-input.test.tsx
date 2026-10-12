@@ -178,5 +178,82 @@ describe("CharacterCountInput", () => {
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent("(Characters 3/3)");
   });
+
+  describe("allowHyphen (Zip code input)", () => {
+    it("allows digits and single hyphen, blocks letters on keydown", () => {
+      render(<CharacterCountInput placeholder="Zip Code" allowHyphen maxLength={10} value="12345" />);
+      const input = screen.getByPlaceholderText("Zip Code");
+
+      expect(fireEvent.keyDown(input, { key: "6" })).toBe(true);
+      expect(fireEvent.keyDown(input, { key: "-" })).toBe(true);
+      expect(fireEvent.keyDown(input, { key: "a" })).toBe(false);
+      expect(fireEvent.keyDown(input, { key: "Z" })).toBe(false);
+      expect(fireEvent.keyDown(input, { key: "+" })).toBe(false);
+    });
+
+    it("prevents entering a hyphen before 5 digits are present", () => {
+      render(<CharacterCountInput placeholder="Zip Code" allowHyphen maxLength={10} value="6666" />);
+      const input = screen.getByPlaceholderText("Zip Code");
+
+      expect(fireEvent.keyDown(input, { key: "-" })).toBe(false);
+      expect(fireEvent.keyDown(input, { key: "6" })).toBe(true);
+    });
+
+    it("prevents entering a second hyphen on keydown", () => {
+      render(<CharacterCountInput placeholder="Zip Code" allowHyphen maxLength={10} value="12345-" />);
+      const input = screen.getByPlaceholderText("Zip Code");
+
+      expect(fireEvent.keyDown(input, { key: "-" })).toBe(false);
+      expect(fireEvent.keyDown(input, { key: "6" })).toBe(true);
+    });
+
+    it("filters out letters and duplicate hyphens on change", () => {
+      let captured = "";
+      const TestComponent = () => {
+        const [val, setVal] = React.useState("");
+        return (
+          <CharacterCountInput
+            placeholder="Zip Code"
+            allowHyphen
+            maxLength={10}
+            value={val}
+            onChange={(e) => {
+              captured = e.target.value;
+              setVal(e.target.value);
+            }}
+          />
+        );
+      };
+      render(<TestComponent />);
+      const input = screen.getByPlaceholderText("Zip Code");
+
+      fireEvent.change(input, { target: { value: "abc12345--6789xyz" } });
+      expect(captured).toBe("12345-6789");
+    });
+
+    it("strips trailing hyphen on blur", () => {
+      let captured = "";
+      const TestComponent = () => {
+        const [val, setVal] = React.useState("12345-");
+        return (
+          <CharacterCountInput
+            placeholder="Zip Code"
+            allowHyphen
+            maxLength={10}
+            value={val}
+            onChange={(e) => {
+              captured = e.target.value;
+              setVal(e.target.value);
+            }}
+          />
+        );
+      };
+      render(<TestComponent />);
+      const input = screen.getByPlaceholderText("Zip Code");
+
+      fireEvent.blur(input);
+      expect(captured).toBe("12345");
+    });
+  });
 });
 
