@@ -665,7 +665,7 @@ const ProviderCalendar: React.FC = () => {
         startTime: startTimeStr,
         endTime: endTimeStr,
         repeat: "Never",
-        repeatEvery: "",
+        repeatEvery: 1,
         repeatEndType: "",
         repeatEndAfter: "",
         repeatEndDate: "",
