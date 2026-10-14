@@ -15,7 +15,7 @@ export function transformEventsForScheduler(formDataList: FormData[]) {
             if (item.repeatEndType === "after" && item.repeatEndAfter) {
                 recurrenceRule = `FREQ=${freq};INTERVAL=${interval};COUNT=${item.repeatEndAfter}`;
             } else if (item.repeatEndType === "on" && item.repeatEndDate) {
-                recurrenceRule = `FREQ=${freq};INTERVAL=${interval};UNTIL=${item.repeatEndDate.replace(/-/g, '')}T235959Z`;
+                recurrenceRule = `FREQ=${freq};INTERVAL=${interval};UNTIL=${item.repeatEndDate.replace(/-/g, '')}T235959`;
             } else {
                 recurrenceRule = `FREQ=${freq};INTERVAL=${interval}`;
             }
@@ -354,7 +354,7 @@ function createRecurrenceRule(
       }
     }
     if (untilDateStr) {
-      const until = untilDateStr.replace(/-/g, "") + "T235959Z";
+      const until = untilDateStr.replace(/-/g, "") + "T235959";
       parts.push(`UNTIL=${until}`);
     }
   }
