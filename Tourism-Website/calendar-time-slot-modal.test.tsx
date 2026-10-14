@@ -156,7 +156,7 @@ describe("CalendarTimeSlotModal", () => {
             renderComponent();
             const dateInput = screen.getByLabelText(/Date/i) as HTMLInputElement;
             fireEvent.change(dateInput, { target: { value: "2024-01-15" } });
-            expect(dateInput.value).toBe("2024-01-15");
+            expect(dateInput.value).toBe("01/15/2024");
         });
 
         it("allows changing start time", () => {
