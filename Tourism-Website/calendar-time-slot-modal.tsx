@@ -132,7 +132,7 @@ const defaultFormData = {
   repeat: "",
   repeatEvery: 1,
   repeatEndType: "",
-  repeatEndAfter: 1,
+  repeatEndAfter: "",
   repeatEndDate: "",
   repeatOn: "",
 };
@@ -447,6 +447,236 @@ const EditableTimeDropdown = ({
   );
 };
 
+// Helper functions for MM/DD/YYYY <-> YYYY-MM-DD conversion
+const formatYmdToMdy = (val: string): string => {
+  if (!val) return "";
+  const trimmed = val.trim();
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(trimmed)) {
+    const [m, d, y] = trimmed.split("/");
+    return `${m.padStart(2, "0")}/${d.padStart(2, "0")}/${y}`;
+  }
+  const parts = trimmed.split("-");
+  if (parts.length === 3 && parts[0].length === 4) {
+    const [y, m, d] = parts;
+    return `${m.padStart(2, "0")}/${d.padStart(2, "0")}/${y}`;
+  }
+  return trimmed;
+};
+
+const formatMdyToYmd = (val: string): string => {
+  if (!val) return "";
+  const trimmed = val.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (match) {
+    const [, m, d, y] = match;
+    const mm = m.padStart(2, "0");
+    const dd = d.padStart(2, "0");
+    const mNum = parseInt(mm, 10);
+    const dNum = parseInt(dd, 10);
+    if (mNum >= 1 && mNum <= 12 && dNum >= 1 && dNum <= 31) {
+      return `${y}-${mm}-${dd}`;
+    }
+  }
+  return trimmed;
+};
+
+interface EnforcedDateInputProps {
+  id?: string;
+  dataTestid?: string;
+  value?: string;
+  onChange: (ymdDate: string) => void;
+  disabled?: boolean;
+  size?: "small" | "medium";
+  fullWidth?: boolean;
+  sx?: any;
+  inputSx?: any;
+  styles?: any;
+  placeholder?: string;
+  isDarkMode?: boolean;
+  error?: boolean;
+  helperText?: string;
+  iconSize?: string;
+}
+
+const EnforcedDateInput: React.FC<EnforcedDateInputProps> = ({
+  id,
+  dataTestid,
+  value = "",
+  onChange,
+  disabled = false,
+  size = "medium",
+  fullWidth = false,
+  sx = {},
+  inputSx = {},
+  styles = {},
+  placeholder = "mm/dd/yyyy",
+  isDarkMode = false,
+  error = false,
+  helperText = "",
+  iconSize = "20px",
+}) => {
+  const [displayText, setDisplayText] = useState(() => formatYmdToMdy(value));
+  const hiddenDateInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDisplayText(formatYmdToMdy(value));
+  }, [value]);
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+
+    // Handle YYYY-MM-DD input from tests or copy-paste
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) {
+      const mdy = formatYmdToMdy(raw);
+      setDisplayText(mdy);
+      onChange(raw.trim());
+      return;
+    }
+
+    const cleaned = raw.replace(/[^\d/]/g, "").slice(0, 10);
+    let formatted = cleaned;
+    if (!cleaned.includes("/") && cleaned.length > 2) {
+      if (cleaned.length <= 4) {
+        formatted = `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`;
+      } else {
+        formatted = `${cleaned.slice(0, 2)}/${cleaned.slice(2, 4)}/${cleaned.slice(4)}`;
+      }
+    }
+
+    setDisplayText(formatted);
+
+    if (formatted === "") {
+      onChange("");
+      return;
+    }
+
+    const ymd = formatMdyToYmd(formatted);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      onChange(ymd);
+    }
+  };
+
+  const handleBlur = () => {
+    if (displayText) {
+      const ymd = formatMdyToYmd(displayText);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+        setDisplayText(formatYmdToMdy(ymd));
+        onChange(ymd);
+      }
+    }
+  };
+
+  const handlePickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const ymd = e.target.value;
+    if (ymd) {
+      setDisplayText(formatYmdToMdy(ymd));
+      onChange(ymd);
+    }
+  };
+
+  const handleOpenPicker = () => {
+    if (disabled) return;
+    try {
+      if (hiddenDateInputRef.current) {
+        if (typeof hiddenDateInputRef.current.showPicker === "function") {
+          hiddenDateInputRef.current.showPicker();
+        } else {
+          hiddenDateInputRef.current.focus();
+        }
+      }
+    } catch {
+      // Ignored
+    }
+  };
+
+  return (
+    <Box
+      sx={{
+        position: "relative",
+        width: fullWidth ? "100%" : (sx?.width || "auto"),
+        display: fullWidth ? "block" : "inline-block",
+      }}
+    >
+      <TextField
+        id={id}
+        data-testid={dataTestid}
+        fullWidth={fullWidth}
+        size={size}
+        placeholder={placeholder}
+        value={displayText}
+        onChange={handleTextChange}
+        onBlur={handleBlur}
+        disabled={disabled}
+        error={error}
+        helperText={helperText}
+        InputProps={{
+          endAdornment: (
+            <InputAdornment position="end">
+              <Box
+                component="span"
+                onClick={handleOpenPicker}
+                sx={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: disabled ? "default" : "pointer",
+                }}
+              >
+                <CalendarMonthOutlinedIcon
+                  sx={{
+                    fontSize: iconSize,
+                    color: isDarkMode ? P.white : P.labelMuted,
+                  }}
+                />
+              </Box>
+            </InputAdornment>
+          ),
+        }}
+        sx={{
+          ...(styles?.textField || {}),
+          ...inputSx,
+          ...(size === "small"
+            ? {
+                "& input": {
+                  padding: "6px 8px",
+                  fontSize: "14px",
+                  color: isDarkMode ? P.white : undefined,
+                },
+                "& input::placeholder": {
+                  fontSize: "14px",
+                  opacity: 1,
+                },
+              }
+            : {}),
+          ...sx,
+        }}
+      />
+      <input
+        ref={hiddenDateInputRef}
+        type="date"
+        tabIndex={-1}
+        aria-hidden="true"
+        disabled={disabled}
+        value={formatMdyToYmd(displayText) || ""}
+        onChange={handlePickerChange}
+        style={{
+          position: "absolute",
+          right: size === "small" ? "6px" : "12px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          width: size === "small" ? "24px" : "28px",
+          height: size === "small" ? "24px" : "28px",
+          opacity: 0,
+          cursor: disabled ? "default" : "pointer",
+          pointerEvents: disabled ? "none" : "auto",
+          zIndex: 2,
+        }}
+      />
+    </Box>
+  );
+};
+
 export const CalendarTimeSlotModal = ({
   open = true,
   onClose,
@@ -478,7 +708,7 @@ export const CalendarTimeSlotModal = ({
       let repeat = "Never";
       let repeatEvery = 1;
       let repeatEndType = "";
-      let repeatEndAfter = 1;
+      let repeatEndAfter: number | string = "";
       let repeatEndDate = null;
       let repeatOn = "";
 
@@ -804,45 +1034,15 @@ export const CalendarTimeSlotModal = ({
           >
             {renderLabel("Date", true)}
           </label>
-          <TextField
-            fullWidth
+          <EnforcedDateInput
             id="date-input"
-            type="date"
-            inputProps={{ lang: "en-US" }}
+            fullWidth
             value={formData.date || ""}
-            onChange={(e) => handleChange("date", e.target.value)}
+            onChange={(val) => handleChange("date", val)}
             disabled={isEditSlot}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <CalendarMonthOutlinedIcon
-                    sx={{
-                      fontSize: "20px",
-                      color: isDarkMode ? P.white : P.labelMuted,
-                      pointerEvents: "none",
-                    }}
-                  />
-                </InputAdornment>
-              ),
-            }}
-            sx={{
-              ...styles.textField,
-              position: "relative",
-              "& .MuiInputBase-root": {
-                position: "relative",
-              },
-              "& input::-webkit-calendar-picker-indicator": {
-                position: "absolute",
-                right: "12px",
-                top: 0,
-                bottom: 0,
-                width: "28px",
-                height: "100%",
-                opacity: 0,
-                cursor: "pointer",
-                zIndex: 2,
-              },
-            }}
+            isDarkMode={isDarkMode}
+            styles={styles}
+            inputSx={inputSx}
           />
         </FormControl>
 
@@ -944,6 +1144,7 @@ export const CalendarTimeSlotModal = ({
                 <TextField
                   fullWidth
                   type="number"
+                  data-testid="repeat-every-input"
                   value={formData.repeatEvery ?? 1}
                   error={!!formErrors.repeatEvery}
                   helperText={formErrors.repeatEvery}
@@ -979,6 +1180,7 @@ export const CalendarTimeSlotModal = ({
                       <TextField
                         type="number"
                         size="small"
+                        data-testid="repeat-end-after-input"
                         sx={{
                           "& input": {
                             padding: "6px 8px",
@@ -993,7 +1195,7 @@ export const CalendarTimeSlotModal = ({
                         }}
                         value={formData.repeatEndAfter}
                         onChange={(e) =>
-                          handleChange("repeatEndAfter", +e.target.value)
+                          handleChange("repeatEndAfter", e.target.value === "" ? "" : +e.target.value)
                         }
                         inputProps={{ min: 1 }}
                         disabled={formData.repeatEndType !== "after"}
@@ -1012,52 +1214,21 @@ export const CalendarTimeSlotModal = ({
                       <span style={{ color: theme.colors.text.secondary, fontSize: theme.typography.fontSize.small }}>
                         On
                       </span>
-                      <TextField
-                        type="date"
+                      <EnforcedDateInput
                         size="small"
-                        inputProps={{ lang: "en-US" }}
+                        dataTestid="repeat-end-date-input"
                         value={formData.repeatEndDate || ""}
-                        onChange={(e) =>
-                          handleChange("repeatEndDate", e.target.value)
+                        onChange={(val) =>
+                          handleChange("repeatEndDate", val)
                         }
                         disabled={formData.repeatEndType !== "on"}
-                        InputProps={{
-                          endAdornment: (
-                            <InputAdornment position="end">
-                              <CalendarMonthOutlinedIcon
-                                sx={{
-                                  fontSize: "18px",
-                                  color: isDarkMode ? P.white : P.labelMuted,
-                                  pointerEvents: "none",
-                                }}
-                              />
-                            </InputAdornment>
-                          ),
-                        }}
+                        isDarkMode={isDarkMode}
+                        iconSize="18px"
+                        styles={styles}
+                        inputSx={inputSx}
                         sx={{
                           marginLeft: "10px",
-                          position: "relative",
-                          "& input": {
-                            padding: "6px 8px",
-                            fontSize: "14px",
-                            color: (theme) => theme.palette.mode === "dark" ? P.white : undefined
-                          },
-                          "& input::placeholder": {
-                            fontSize: "14px",
-                            opacity: 1,
-                          },
-                          "& input::-webkit-calendar-picker-indicator": {
-                            position: "absolute",
-                            right: "8px",
-                            top: 0,
-                            bottom: 0,
-                            width: "24px",
-                            height: "100%",
-                            opacity: 0,
-                            cursor: "pointer",
-                            zIndex: 2,
-                          },
-                          ...inputSx,
+                          width: "165px",
                           marginBottom: 0,
                         }}
                       />
