@@ -376,4 +376,43 @@ expect(mainEvent?.recurrenceExceptions?.length).toBeGreaterThanOrEqual(0);
 
 expect(exceptionEvent?.recurrenceId).toBe(1);
   });
+
+  it("generates recurrence rule with UNTIL formatted without trailing Z to avoid timezone shift into next day", () => {
+    const apiEvents: any = [
+      {
+        SlotId: 10,
+        TaskId: 200,
+        Start: "2026-10-09T00:00:00Z",
+        End: "2026-10-09T01:00:00Z",
+        Repeat: "Daily",
+        RepeatInterval: 1,
+        RepeatEndAfterInterval: null,
+        RepeatEndDate: "2026-11-01T00:00:00",
+        RepeatOnWeekDays: "",
+        Title: "Slot",
+        TitleDesc: "",
+        Description: "",
+        TaskType: "Available",
+      },
+      {
+        SlotId: 11,
+        TaskId: 200,
+        Start: "2026-11-01T00:00:00Z",
+        End: "2026-11-01T01:00:00Z",
+        Repeat: "Daily",
+        RepeatInterval: 1,
+        RepeatEndAfterInterval: null,
+        RepeatEndDate: "2026-11-01T00:00:00",
+        RepeatOnWeekDays: "",
+        Title: "Slot",
+        TitleDesc: "",
+        Description: "",
+        TaskType: "Available",
+      },
+    ];
+
+    const output = transformApiToSchedulerEvents(apiEvents);
+    expect(output[0].recurrenceRule).toBe("FREQ=DAILY;INTERVAL=1;UNTIL=20261101T235959");
+    expect(output[0].recurrenceRule).not.toContain("Z");
+  });
 });
