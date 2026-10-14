@@ -47,7 +47,7 @@ jest.mock("../../../ui/reusable-drawer", () => ({
             <h2>{title}</h2>
             {children}
             <button onClick={onSave}>{btnText || "Save"}</button>
-            <button onClick={onSave}>Create</button>
+            <button onClick={onSave} style={{ display: "none" }}>Create</button>
             <button onClick={onCancel}>Cancel</button>
         </div>
     ),
@@ -98,11 +98,19 @@ describe("CalendarTimeSlotModal", () => {
 
     // Helper function to find Repeat Every input
     const getRepeatEveryInput = (): HTMLInputElement | null => {
+        const testIdElement = screen.queryByTestId("repeat-every-input");
+        if (testIdElement) {
+            return (testIdElement.tagName === "INPUT" ? testIdElement : testIdElement.querySelector("input")) as HTMLInputElement;
+        }
         return findInputByNearbyText("Repeat Every");
     };
 
     // Helper function to find Repeat End After input
     const getRepeatEndAfterInput = (): HTMLInputElement | null => {
+        const testIdElement = screen.queryByTestId("repeat-end-after-input");
+        if (testIdElement) {
+            return (testIdElement.tagName === "INPUT" ? testIdElement : testIdElement.querySelector("input")) as HTMLInputElement;
+        }
         return findInputByNearbyText("occurrences");
     };
 
@@ -154,15 +162,15 @@ describe("CalendarTimeSlotModal", () => {
         it("allows changing start time", () => {
             renderComponent();
             const startTimeInput = screen.getByTestId("start-time-input").querySelector("input") as HTMLInputElement;
-            fireEvent.change(startTimeInput, { target: { value: "09:00" } });
-            expect(startTimeInput.value).toBe("09:00");
+            fireEvent.change(startTimeInput, { target: { value: "09:00 AM" } });
+            expect(startTimeInput.value).toBe("09:00 AM");
         });
 
         it("allows changing end time", () => {
             renderComponent();
             const endTimeInput = screen.getByTestId("end-time-input").querySelector("input") as HTMLInputElement;
-            fireEvent.change(endTimeInput, { target: { value: "10:00" } });
-            expect(endTimeInput.value).toBe("10:00");
+            fireEvent.change(endTimeInput, { target: { value: "10:00 AM" } });
+            expect(endTimeInput.value).toBe("10:00 AM");
         });
 
         it("allows changing type to Event", () => {
@@ -250,6 +258,12 @@ describe("CalendarTimeSlotModal", () => {
             fireEvent.change(startTimeInput, { target: { value: "09:00" } });
             fireEvent.change(endTimeInput, { target: { value: "10:00" } });
             fireEvent.change(repeatSelect, { target: { value: "Daily" } });
+            
+            // Repeat Every defaults to 1 per requirement, clear it to verify required validation
+            const repeatEveryInput = getRepeatEveryInput();
+            if (repeatEveryInput) {
+                fireEvent.change(repeatEveryInput, { target: { value: "" } });
+            }
             fireEvent.click(screen.getByText("Create"));
             
             expect(screen.getByText(/Repeat every must be a positive number/i)).toBeInTheDocument();
@@ -264,9 +278,24 @@ describe("CalendarTimeSlotModal", () => {
             fireEvent.change(startTimeInput, { target: { value: "09:00" } });
             fireEvent.change(endTimeInput, { target: { value: "10:00" } });
             fireEvent.change(repeatSelect, { target: { value: "Weekly" } });
+            
+            // Repeat Every defaults to 1 per requirement, clear it to verify required validation
+            const repeatEveryInput = getRepeatEveryInput();
+            if (repeatEveryInput) {
+                fireEvent.change(repeatEveryInput, { target: { value: "" } });
+            }
             fireEvent.click(screen.getByText("Create"));
             
             expect(screen.getByText(/Repeat every must be a positive number/i)).toBeInTheDocument();
+        });
+
+        it("defaults Repeat Every to 1 when recurrence is selected", () => {
+            renderComponent();
+            const repeatSelect = screen.getByTestId("select-repeat") as HTMLSelectElement;
+            fireEvent.change(repeatSelect, { target: { value: "Daily" } });
+            
+            const repeatEveryInput = getRepeatEveryInput();
+            expect(repeatEveryInput?.value).toBe("1");
         });
 
         it("validates Repeat On is required for Weekly repeat", () => {
@@ -651,15 +680,15 @@ describe("CalendarTimeSlotModal", () => {
             
             // Input 24-hour format, should be converted to 12-hour internally
             fireEvent.change(startTimeInput, { target: { value: "13:00" } });
-            expect(startTimeInput.value).toBe("13:00");
+            expect(startTimeInput.value).toBe("01:00 PM");
         });
 
         it("handles time with AM/PM", () => {
             renderComponent();
             const startTimeInput = screen.getByTestId("start-time-input").querySelector("input") as HTMLInputElement;
             
-            fireEvent.change(startTimeInput, { target: { value: "09:00" } });
-            expect(startTimeInput.value).toBe("09:00");
+            fireEvent.change(startTimeInput, { target: { value: "09:00 AM" } });
+            expect(startTimeInput.value).toBe("09:00 AM");
         });
     });
 
