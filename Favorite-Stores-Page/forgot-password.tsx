@@ -95,11 +95,14 @@ const ForgotPassword: React.FC = () => {
             <Box
               component="form"
               onSubmit={handleSubmit}
-                        sx={{
+              sx={{
                 display: "flex",
                 flexDirection: "column",
-                        }}
-                    >
+                width: { xs: "100%", sm: "345px", md: "345px", lg: "345px", xl: "345px" },
+                maxWidth: "345px",
+                mx: "auto",
+              }}
+            >
               {error && (
                 <AlertBanner
                   severity="error"
@@ -127,12 +130,16 @@ const ForgotPassword: React.FC = () => {
  
                         <Typography
                             variant="inherit"
+                            component="p"
                             sx={(theme) => ({
                                 fontWeight: 400,
-                                fontSize: '12px',
+                                fontSize: '14px',
                                 lineHeight: "20px",
                                 color: P.textSecondary,
                                 mb: "24px",
+                                display: "block",
+                                width: { xs: "100%", sm: "345px", md: "345px", lg: "345px", xl: "345px" },
+                                maxWidth: "345px",
                                 fontFamily: theme.custom?.typeScale.openSans,
                             })}
                         >
@@ -140,7 +147,12 @@ const ForgotPassword: React.FC = () => {
                             password.
                         </Typography>
 
-                        <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                        <Box sx={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            width: { xs: "100%", sm: "345px", md: "345px", lg: "345px", xl: "345px" },
+                            maxWidth: "345px",
+                        }}>
                             <TextInput
                                 id="username"
                                 name="username"
@@ -149,6 +161,7 @@ const ForgotPassword: React.FC = () => {
                                 onChange={handleInputChange}
                                 error={!!error}
                                 autoComplete="off"
+                                height="45px"
                                 endAdornment={
                                     error ? (
                                         <InputAdornment position="end">
@@ -187,8 +200,12 @@ const ForgotPassword: React.FC = () => {
                             variant="contained"
                             disabled={loading}
                             sx={(theme) => ({
-                                width: '100%',
-                                height: '51px',
+                                width: { xs: "100%", sm: "345px", md: "345px", lg: "345px", xl: "345px" },
+                                maxWidth: "345px",
+                                minWidth: { sm: "345px", md: "345px", lg: "345px", xl: "345px" },
+                                height: "45px",
+                                minHeight: "45px",
+                                maxHeight: "45px",
                                 borderRadius: '10px',
                                 textTransform: 'none',
                                 fontSize: '14px',
